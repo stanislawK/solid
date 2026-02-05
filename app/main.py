@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from app.config import settings
 from app.db import Base, engine
 from app import models  # noqa: F401
-from app.routers import health, items
+from app.routers import health, plants, wiki
 
 
 @asynccontextmanager
@@ -25,4 +25,5 @@ app = FastAPI(
 
 
 app.include_router(health.router)
-app.include_router(items.router)
+app.include_router(plants.router)
+app.include_router(wiki.router)

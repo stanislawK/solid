@@ -18,3 +18,7 @@ upgrade:
 .PHONY: downgrade
 downgrade:
 	$(ALEMBIC) downgrade $(REV)
+
+.PHONY: format
+format:
+	$(PYTHON) ruff format .
