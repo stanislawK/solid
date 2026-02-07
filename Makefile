@@ -22,3 +22,15 @@ downgrade:
 .PHONY: format
 format:
 	$(PYTHON) ruff format .
+
+.PHONY: reapply-backend
+reapply-backend:
+	helm upgrade --install backend ./k8s/backend-service
+
+.PHONY: start-pods
+start-pods:
+	kubectl scale deploy/solid-backend --replicas=1
+
+.PHONY: stop-pods
+stop-pods:
+	kubectl scale deploy/solid-backend --replicas=0

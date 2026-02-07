@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: solid-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: solid-backend
+  template:
+    metadata:
+      labels:
+        app: solid-backend
+    spec:
+      containers:
+      - name: solid-backend-container
+        image: solid-app:latest
+        imagePullPolicy: Never # Crucial for local Kind use
+        ports:
+        - containerPort: 8000

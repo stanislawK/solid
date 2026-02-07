@@ -12,6 +12,15 @@ FastAPI service for managing plant data, enriched from Wikipedia and summarized 
 - External data fetching via `curl_cffi` with browser impersonation
 - SOLID-inspired architecture (repositories, services, protocols)
 
+## Requirements
+
+- Python 3.14
+- uv
+- Docker
+- kubectl
+- kind
+- Helm
+
 ## Project layout
 
 ```
@@ -43,6 +52,19 @@ main.py
 The API docs will be available at:
 - `http://127.0.0.1:8000/docs`
 - `http://127.0.0.1:8000/redoc`
+
+## Kubernetes (kind + Helm)
+
+This chart targets a local kind cluster with an image loaded via `kind load docker-image`.
+
+Scale down:
+- `kubectl scale deploy/solid-backend --replicas=0`
+
+Scale up:
+- `kubectl scale deploy/solid-backend --replicas=1`
+
+Install or upgrade the chart:
+- `helm upgrade --install backend ./k8s/backend-service`
 
 ## API overview
 
