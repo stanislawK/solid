@@ -13,11 +13,22 @@ spec:
       {{- include "backend-service.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      {{- if .Values.observability.logs.enabled }}
+      annotations:
+        {{- with .Values.observability.logs.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- else }}
       {{- with .Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- end }}
       labels:
+        app: solid-backend
         {{- include "backend-service.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
@@ -40,9 +51,29 @@ spec:
           {{- end }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: GLITCHTIP_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: glitchtip-secret
+                  key: GLITCHTIP_DSN
+            - name: DATABASE_URL
+              value: {{ .Values.DATABASE_URL }}
+            {{- if .Values.observability.otel.enabled }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.observability.otel.serviceName | quote }}
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.observability.otel.exporter.endpoint | quote }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: {{ .Values.observability.otel.exporter.protocol | quote }}
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: {{ .Values.observability.otel.resourceAttributes | quote }}
+            {{- end }}
           ports:
             - name: http
-              containerPort: {{ .Values.service.port }}
+              containerPort: 8000
               protocol: TCP
           {{- with .Values.livenessProbe }}
           livenessProbe:

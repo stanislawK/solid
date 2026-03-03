@@ -1,0 +1,17 @@
+# traefik ingress route configuration
+ingressRoute:
+  dashboard:
+    enabled: true
+    matchRule: Host(`dashboard.localhost`)
+    entryPoints:
+      - web
+service:
+  type: NodePort
+providers:
+  kubernetesGateway:
+    enabled: false
+gateway:
+  listeners:
+    web:
+      namespacePolicy:
+        from: All

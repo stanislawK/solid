@@ -1,0 +1,13 @@
+observability:
+  otel:
+    enabled: true
+    serviceName: "solid-backend"
+    exporter:
+      endpoint: "http://otel-collector-opentelemetry-collector.default.svc.cluster.local:4318"
+      protocol: "http/protobuf"
+    resourceAttributes: "deployment.environment=local,service.namespace=default"
+  logs:
+    enabled: true
+    podAnnotations:
+      loki.grafana.com/scrape: "true"
+      loki.grafana.com/job: "solid-backend"

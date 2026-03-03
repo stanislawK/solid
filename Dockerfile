@@ -16,4 +16,4 @@ COPY --from=builder /app /app
 # Place uv-created venv on PATH
 ENV PATH="/app/.venv/bin:$PATH"
 
-CMD ["uvicorn", "main:app"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
