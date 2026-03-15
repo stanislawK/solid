@@ -60,6 +60,11 @@ class AuthUserInfo(BaseModel):
     provider: str | None = None
 
 
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
 class UserBase(BaseModel):
     email: str
     name: str

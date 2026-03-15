@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     gcp_client_id: str = ""
     gcp_client_secret: str = ""
     gcp_redirect_uri: str = "http://127.0.0.1:8000/auth/callback"
+    jwt_secret_key: str = Field(default="your-very-secure-jwt-secret-key", min_length=32)
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 1440
     session_secret_key: str = Field(default="", min_length=32)
     session_https_only: bool = False
     session_same_site: Literal["lax", "strict", "none"] = "lax"

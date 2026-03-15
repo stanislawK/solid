@@ -9,6 +9,8 @@ from typing import Protocol, cast
 from fastapi import Request
 from fastapi.responses import RedirectResponse
 from authlib.integrations.starlette_client import OAuth
+import jwt
+from datetime import datetime, timezone, timedelta
 
 """
 O: Open/Closed Principle (OCP)
@@ -225,9 +227,34 @@ class GoogleAuthProvider:
             raise ValueError(f"Google OAuth verification failed: {exc}") from exc
 
 
+class ITokenProvider(Protocol):
+    def create_access_token(self, subject: str) -> str: ...
+    def verify_token(self, token: str) -> str | None: ...
+
+
+class JWTTokenProvider:
+    def __init__(self, secret_key: str, algorithm: str, expire_minutes: int):
+        self.secret_key = secret_key
+        self.algorithm = algorithm
+        self.expire_minutes = expire_minutes
+
+    def create_access_token(self, subject: str) -> str:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=self.expire_minutes)
+        to_encode = {"exp": int(expire.timestamp()), "sub": str(subject)}
+        return jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
+
+    def verify_token(self, token: str) -> str | None:
+        try:
+            payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
+            return payload.get("sub")
+        except jwt.InvalidTokenError:
+            return None
+
+
 class AuthBusinessService:
-    def __init__(self, user_repo: IUserRepository):
+    def __init__(self, user_repo: IUserRepository, token_provider: ITokenProvider):
         self.user_repo = user_repo
+        self.token_provider = token_provider
 
     def process_google_user(self, user_info: AuthUserInfo) -> dict:
         from .models import User
@@ -244,10 +271,11 @@ class AuthBusinessService:
                 provider=user_info.provider or "google",
                 is_active=False,
             )
-            self.user_repo.create(new_user)
-            return {"message": "registered/needs activation", "data": user_info}
-
+            user = self.user_repo.create(new_user)
+            
         if not user.is_active:
-            return {"message": "exists/needs activation", "data": user_info}
+            raise ValueError("User is inactive")
+            
+        token = self.token_provider.create_access_token(user.email)
+        return {"access_token": token, "token_type": "bearer", "user": {"email": user.email}}
 
-        return {"message": "exists/active", "data": user_info}
