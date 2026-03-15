@@ -50,3 +50,11 @@ class WikipediaRequest(BaseModel):
         min_length=1,
         examples=["Monstera deliciosa"],
     )
+
+
+class AuthUserInfo(BaseModel):
+    id: str | None = None
+    email: str | None = None
+    name: str | None = None
+    picture: str | None = None
+    provider: str | None = None

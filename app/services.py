@@ -1,11 +1,14 @@
 import curl_cffi
-from .schemas import PlantCreate
+from .schemas import AuthUserInfo, PlantCreate
 from .repositories import IPlantRepository
 from .models import Plant
 from google import genai
 
 from abc import ABC, abstractmethod
-from typing import Protocol
+from typing import Protocol, cast
+from fastapi import Request
+from fastapi.responses import RedirectResponse
+from authlib.integrations.starlette_client import OAuth
 
 """
 O: Open/Closed Principle (OCP)
@@ -72,6 +75,13 @@ class WikipediaProvider(Protocol):
     def get_article(self, title: str) -> str: ...
 
 
+class AuthProvider(Protocol):
+    async def authorize_redirect(
+        self, request: Request, redirect_uri: str
+    ) -> RedirectResponse: ...
+    async def authorize_access_token(self, request: Request) -> AuthUserInfo: ...
+
+
 # S - Single Responsibility Principle (SRP): The WikipediaService has one job: communicating with the Wikipedia API. The FastAPI route has one job: handling the HTTP request/response. The Pydantic model has one job: validating data.
 # O - Open/Closed Principle (OCP): The system is open for extension. If you wanted to switch to a different search engine (like DuckDuckGo), you could create a new class that follows the WikipediaProvider protocol without changing a single line of code in your FastAPI route.
 # L - Liskov Substitution Principle (LSP): Because we use a Protocol, any class that implements search_articles(self, term: str) -> List[str] can be substituted for the WikipediaService. The router doesn't care about the implementation details; it only cares that the "contract" is fulfilled.
@@ -84,7 +94,9 @@ class WikipediaService:
     Concrete implementation using the wikipedia-api library.
     """
 
-    def __init__(self, browser: curl_cffi.BrowserTypeLiteral, language: str = "pl"):
+    def __init__(
+        self, browser: curl_cffi.requests.BrowserTypeLiteral, language: str = "pl"
+    ):
         self.browser = browser
         self.language = language
         self.base_url = f"https://{language}.wikipedia.org/w/api.php"
@@ -101,7 +113,9 @@ class WikipediaService:
 
         try:
             response = curl_cffi.get(
-                self.base_url, params=params, impersonate=self.browser
+                self.base_url,
+                params=params,
+                impersonate=cast(curl_cffi.requests.BrowserTypeLiteral, self.browser),
             )
             response.raise_for_status()
             data = response.json()
@@ -122,7 +136,9 @@ class WikipediaService:
 
         try:
             response = curl_cffi.get(
-                self.base_url, params=params, impersonate=self.browser
+                self.base_url,
+                params=params,
+                impersonate=cast(curl_cffi.requests.BrowserTypeLiteral, self.browser),
             )
             response.raise_for_status()
             data = response.json()
@@ -170,7 +186,40 @@ class GeminiPlantSummarizer:
             ),
         )
         self.client.close()
-        print(response.text)
         if response.text is None:
             raise ValueError("Gemini response text is None")
         return PlantCreate.model_validate_json(response.text)
+
+
+class GoogleAuthProvider:
+    def __init__(self, client_id: str, client_secret: str):
+        self.oauth = OAuth()
+        self.oauth.register(
+            name="google",
+            server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+            client_id=client_id,
+            client_secret=client_secret,
+            client_kwargs={
+                "scope": "openid email profile",
+                "code_challenge_method": "S256",  # Enables PKCE for extra security
+            },
+        )
+
+    async def authorize_redirect(
+        self, request: Request, redirect_uri: str
+    ) -> RedirectResponse:
+        return await self.oauth.google.authorize_redirect(request, redirect_uri)
+
+    async def authorize_access_token(self, request: Request) -> AuthUserInfo:
+        try:
+            token = await self.oauth.google.authorize_access_token(request)
+            user_data = token.get("userinfo", {})
+            return AuthUserInfo(
+                id=user_data.get("sub"),
+                email=user_data.get("email"),
+                name=user_data.get("name"),
+                picture=user_data.get("picture"),
+                provider="google",
+            )
+        except Exception as exc:
+            raise ValueError(f"Google OAuth verification failed: {exc}") from exc

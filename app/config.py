@@ -1,5 +1,7 @@
 import curl_cffi
+from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
 
 class Settings(BaseSettings):
@@ -12,7 +14,7 @@ class Settings(BaseSettings):
     app_name: str = "Solid API"
     database_url: str = "sqlite:///./app.db"
     debug: bool = False
-    browser: curl_cffi.BrowserTypeLiteral = "chrome"
+    browser: curl_cffi.requests.BrowserTypeLiteral = "chrome"
     gem_api_key: str = ""
     glitchtip_dsn: str = ""
     otel_enabled: bool = True
@@ -22,6 +24,13 @@ class Settings(BaseSettings):
     )
     otel_exporter_otlp_protocol: str = "http/protobuf"
     otel_resource_attributes: str = "deployment.environment=local"
+    gcp_client_id: str = ""
+    gcp_client_secret: str = ""
+    gcp_redirect_uri: str = "http://127.0.0.1:8000/auth/callback"
+    session_secret_key: str = Field(default="", min_length=32)
+    session_https_only: bool = False
+    session_same_site: Literal["lax", "strict", "none"] = "lax"
+    session_max_age_seconds: int = 3600
 
 
 settings = Settings()

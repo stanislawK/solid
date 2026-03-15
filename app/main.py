@@ -9,7 +9,8 @@ from app.config import settings
 from app.db import Base, engine
 from app import models  # noqa: F401
 from app.observability import configure_tracing
-from app.routers import health, plants, wiki
+from app.routers import auth, health, plants, wiki
+from starlette.middleware.sessions import SessionMiddleware
 
 # GlitchTip (Sentry SDK)
 if settings.glitchtip_dsn:
@@ -39,10 +40,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.session_secret_key,
+    same_site=settings.session_same_site,
+    https_only=settings.session_https_only,
+    max_age=settings.session_max_age_seconds,
+)
 
 app.include_router(health.router)
 app.include_router(plants.router)
 app.include_router(wiki.router)
+app.include_router(auth.router)
 
 # OpenTelemetry Setup
 # This will automatically capture HTTP metrics and traces
