@@ -39,7 +39,15 @@ class IUserRepository(ABC):
         pass
 
     @abstractmethod
+    def get_by_id(self, user_id: int) -> User | None:
+        pass
+
+    @abstractmethod
     def create(self, user: User) -> User:
+        pass
+
+    @abstractmethod
+    def update(self, user: User) -> User:
         pass
 
 
@@ -50,7 +58,16 @@ class SQLAlchemyUserRepository(IUserRepository):
     def get_by_email(self, email: str) -> User | None:
         return self.db.query(User).filter(User.email == email).first()
 
+    def get_by_id(self, user_id: int) -> User | None:
+        return self.db.query(User).filter(User.id == user_id).first()
+
     def create(self, user: User) -> User:
+        self.db.add(user)
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+    def update(self, user: User) -> User:
         self.db.add(user)
         self.db.commit()
         self.db.refresh(user)

@@ -252,9 +252,15 @@ class JWTTokenProvider:
 
 
 class AuthBusinessService:
-    def __init__(self, user_repo: IUserRepository, token_provider: ITokenProvider):
+    def __init__(
+        self,
+        user_repo: IUserRepository,
+        token_provider: ITokenProvider,
+        admin_email: str = "",
+    ):
         self.user_repo = user_repo
         self.token_provider = token_provider
+        self.admin_email = admin_email
 
     def process_google_user(self, user_info: AuthUserInfo) -> dict:
         from .models import User
@@ -263,19 +269,45 @@ class AuthBusinessService:
             raise ValueError("No email found in user_info")
 
         user = self.user_repo.get_by_email(user_info.email)
+        is_admin = bool(self.admin_email and user_info.email == self.admin_email)
+
         if not user:
             new_user = User(
                 email=user_info.email,
                 name=user_info.name or "Unknown",
                 picture=user_info.picture,
                 provider=user_info.provider or "google",
-                is_active=False,
+                is_active=is_admin,  # Admin is active by default, others need approval
             )
             user = self.user_repo.create(new_user)
-            
-        if not user.is_active:
-            raise ValueError("User is inactive")
-            
-        token = self.token_provider.create_access_token(user.email)
-        return {"access_token": token, "token_type": "bearer", "user": {"email": user.email}}
 
+        if not user.is_active:
+            raise PermissionError("User is inactive")
+
+        token = self.token_provider.create_access_token(user.email)
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "user": {"email": user.email},
+        }
+
+    def activate_user(self, user_email: str) -> bool:
+        user = self.user_repo.get_by_email(user_email)
+        if not user:
+            raise ValueError(f"User {user_email} not found.")
+
+        user.is_active = True
+        self.user_repo.update(user)
+        return True
+
+    def deactivate_user(self, user_email: str) -> bool:
+        user = self.user_repo.get_by_email(user_email)
+        if not user:
+            raise ValueError(f"User {user_email} not found.")
+
+        if self.admin_email and user.email == self.admin_email:
+            raise ValueError("Cannot deactivate the admin user.")
+
+        user.is_active = False
+        self.user_repo.update(user)
+        return True
