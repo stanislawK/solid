@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from .models import Plant
+from .models import Plant, User
 from abc import ABC, abstractmethod
 
 """
@@ -31,3 +31,27 @@ class SQLAlchemyPlantRepository(IPlantRepository):
 
     def get_by_id(self, plant_id: int) -> Plant | None:
         return self.db.query(Plant).filter(Plant.id == plant_id).first()
+
+
+class IUserRepository(ABC):
+    @abstractmethod
+    def get_by_email(self, email: str) -> User | None:
+        pass
+
+    @abstractmethod
+    def create(self, user: User) -> User:
+        pass
+
+
+class SQLAlchemyUserRepository(IUserRepository):
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_by_email(self, email: str) -> User | None:
+        return self.db.query(User).filter(User.email == email).first()
+
+    def create(self, user: User) -> User:
+        self.db.add(user)
+        self.db.commit()
+        self.db.refresh(user)
+        return user

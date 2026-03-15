@@ -1,6 +1,6 @@
 import curl_cffi
 from .schemas import AuthUserInfo, PlantCreate
-from .repositories import IPlantRepository
+from .repositories import IPlantRepository, IUserRepository
 from .models import Plant
 from google import genai
 
@@ -223,3 +223,31 @@ class GoogleAuthProvider:
             )
         except Exception as exc:
             raise ValueError(f"Google OAuth verification failed: {exc}") from exc
+
+
+class AuthBusinessService:
+    def __init__(self, user_repo: IUserRepository):
+        self.user_repo = user_repo
+
+    def process_google_user(self, user_info: AuthUserInfo) -> dict:
+        from .models import User
+
+        if not user_info.email:
+            raise ValueError("No email found in user_info")
+
+        user = self.user_repo.get_by_email(user_info.email)
+        if not user:
+            new_user = User(
+                email=user_info.email,
+                name=user_info.name or "Unknown",
+                picture=user_info.picture,
+                provider=user_info.provider or "google",
+                is_active=False,
+            )
+            self.user_repo.create(new_user)
+            return {"message": "registered/needs activation", "data": user_info}
+
+        if not user.is_active:
+            return {"message": "exists/needs activation", "data": user_info}
+
+        return {"message": "exists/active", "data": user_info}

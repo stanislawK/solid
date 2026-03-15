@@ -58,3 +58,21 @@ class AuthUserInfo(BaseModel):
     name: str | None = None
     picture: str | None = None
     provider: str | None = None
+
+
+class UserBase(BaseModel):
+    email: str
+    name: str
+    picture: str | None = None
+    provider: str
+    is_active: bool = False
+
+
+class UserCreate(UserBase):
+    pass
+
+
+class UserRead(UserBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int

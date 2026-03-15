@@ -1,5 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from app.services import AuthProvider, GoogleAuthProvider
+from sqlalchemy.orm import Session
+from app.services import AuthProvider, GoogleAuthProvider, AuthBusinessService
+from app.repositories import IUserRepository, SQLAlchemyUserRepository
+from app.db import get_db
 from app.config import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -12,6 +15,16 @@ def get_auth_provider() -> AuthProvider:
         client_id=settings.gcp_client_id,
         client_secret=settings.gcp_client_secret,
     )
+
+
+def get_user_repository(db: Session = Depends(get_db)) -> IUserRepository:
+    return SQLAlchemyUserRepository(db)
+
+
+def get_auth_business_service(
+    repo: IUserRepository = Depends(get_user_repository),
+) -> AuthBusinessService:
+    return AuthBusinessService(repo)
 
 
 # --- Endpoints ---
@@ -29,6 +42,7 @@ async def login(request: Request, auth: AuthProvider = Depends(get_auth_provider
 async def auth_callback(
     request: Request,
     auth: AuthProvider = Depends(get_auth_provider),
+    auth_service: AuthBusinessService = Depends(get_auth_business_service),
 ):
     """Route 2: Google sends the user back here with a 'code'"""
     try:
@@ -45,4 +59,4 @@ async def auth_callback(
         ) from exc
 
     # At this point, you have the user's email!
-    return {"message": f"Welcome, {user_info.name}!", "data": user_info}
+    return auth_service.process_google_user(user_info)
