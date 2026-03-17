@@ -36,6 +36,11 @@ app/
 		wiki.py
 	schemas.py
 	services.py
+frontend/
+	Dockerfile
+	package.json
+	src/
+	... (React/Vite app)
 main.py
 ```
 
@@ -55,16 +60,24 @@ The API docs will be available at:
 
 ## Kubernetes (kind + Helm)
 
-This chart targets a local kind cluster with an image loaded via `kind load docker-image`.
+This setup uses separate Helm charts for the backend and frontend. Both target a local kind cluster.
 
-Scale down:
-- `kubectl scale deploy/solid-backend --replicas=0`
+Build and load the images:
+```bash
+docker build -t solid-backend:latest .
+docker build -t solid-frontend:latest ./frontend
+kind load docker-image solid-backend:latest --name solid-cluster
+kind load docker-image solid-frontend:latest --name solid-cluster
+```
 
-Scale up:
-- `kubectl scale deploy/solid-backend --replicas=1`
-
-Install or upgrade the chart:
+Install or upgrade the backend chart:
 - `helm upgrade --install backend ./k8s/backend-service`
+
+Install or upgrade the frontend chart:
+- `helm upgrade --install frontend ./k8s/frontend-service`
+
+Access the UI at: `http://localhost/` (Routed by Traefik)
+Backend API at: `http://localhost/api/` (Routed to the API by Traefik)
 
 ## API overview
 

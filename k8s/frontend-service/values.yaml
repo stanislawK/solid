@@ -1,0 +1,16 @@
+replicaCount: 1
+
+image:
+  repository: solid-frontend
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: traefik-solid
+  # Optional: specify a host or leave empty for wildcard
+  host: ""
