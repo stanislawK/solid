@@ -7,8 +7,7 @@ metadata:
 spec:
   ingressClassName: traefik-solid
   rules:
-  - host: backend.local
-    http:
+  - http:
       paths:
       - path: /
         pathType: Prefix

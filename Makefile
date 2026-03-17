@@ -1,6 +1,6 @@
 PYTHON := uv run
 ALEMBIC := $(PYTHON) alembic
-IMAGE_NAME := solid-app
+IMAGE_NAME := solid-backend
 IMAGE_TAG := latest
 KIND_CLUSTER := solid-cluster
 KUBE_NAMESPACE := default
