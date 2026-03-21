@@ -7,6 +7,8 @@ KUBE_NAMESPACE := default
 HELM_RELEASE := backend
 HELM_CHART := ./k8s/backend-service
 BACKEND_DEPLOYMENT := $(HELM_RELEASE)-backend-service
+FRONTEND_IMAGE_NAME := solid-frontend
+FRONTEND_DEPLOYMENT := frontend-deployment
 OBSERVABILITY_RELEASES := monitoring loki alloy tempo otel-collector glitchtip-solid
 INFRA_RELEASES := traefik-solid cnpg
 SCALABLE_RELEASES := $(HELM_RELEASE) $(OBSERVABILITY_RELEASES) $(INFRA_RELEASES)
@@ -130,5 +132,14 @@ redeploy-backend:
 	kind load docker-image $(IMAGE_NAME):$(IMAGE_TAG) --name $(KIND_CLUSTER)
 	kubectl -n $(KUBE_NAMESPACE) rollout restart deploy/$(BACKEND_DEPLOYMENT)
 
+.PHONY: redeploy-frontend
+redeploy-frontend:
+	docker build -t $(FRONTEND_IMAGE_NAME):$(IMAGE_TAG) frontend/
+	kind load docker-image $(FRONTEND_IMAGE_NAME):$(IMAGE_TAG) --name $(KIND_CLUSTER)
+	kubectl -n $(KUBE_NAMESPACE) rollout restart deploy/$(FRONTEND_DEPLOYMENT)
+
 backend-rollout:
 	kubectl -n $(KUBE_NAMESPACE) rollout restart deploy/$(BACKEND_DEPLOYMENT)
+
+frontend-rollout:
+	kubectl -n $(KUBE_NAMESPACE) rollout restart deploy/$(FRONTEND_DEPLOYMENT)

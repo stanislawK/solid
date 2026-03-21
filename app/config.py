@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     otel_resource_attributes: str = "deployment.environment=local"
     gcp_client_id: str = ""
     gcp_client_secret: str = ""
-    gcp_redirect_uri: str = "http://127.0.0.1:8000/auth/callback"
+    gcp_redirect_uri: str = "http://localhost:8080/api/auth/callback"
+    frontend_url: str = "http://localhost:8080"
     jwt_secret_key: str = Field(
         default="your-very-secure-jwt-secret-key", min_length=32
     )

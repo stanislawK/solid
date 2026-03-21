@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from app.services import (
     AuthProvider,
@@ -114,7 +115,14 @@ async def auth_callback(
         ) from exc
 
     # At this point, you have the user's email!
-    return auth_service.process_google_user(user_info)
+    try:
+        result = auth_service.process_google_user(user_info)
+        access_token = result["access_token"]
+        return RedirectResponse(url=f"{settings.frontend_url}/#access_token={access_token}")
+    except PermissionError:
+        return RedirectResponse(url=f"{settings.frontend_url}/#error=inactive")
+    except Exception as exc:
+        return RedirectResponse(url=f"{settings.frontend_url}/#error=server_error")
 
 
 @router.get("/me")

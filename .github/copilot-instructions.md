@@ -11,6 +11,10 @@
 * **Migrations:** Alembic.
 * **Architecture:** SOLID principles. Use Dependency Injection and Protocols/ABCs.
 * **Local Kubernetes:** kind + Helm (Kubernetes CLI: kubectl).
+* **Frontend:** React + Vite, built with `pnpm`.
+* **UI Components:** `shadcn/ui` with light/dark theme support (mobile-first).
+* **Observability:** Prometheus, Grafana, Loki + Alloy (Logs), OpenTelemetry/Tempo (Traces).
+* **Ingress/Routing:** Traefik.
 
 ## Coding Standards & Rules
 
@@ -41,3 +45,13 @@
 * For local clusters, assume kind with images loaded via `kind load docker-image`.
 * Prefer Helm for installs/upgrades: `helm upgrade --install backend ./k8s/backend-service`.
 * For resource control, use `kubectl scale deploy/solid-backend --replicas=0|1`.
+
+6. **Frontend Development:**
+
+* Split the UI into modular components.
+* Use React with TypeScript for all frontend code.
+* Use `shadcn/ui` to create UI components.
+* Ensure all components, icons, and UI elements fully support both dark and light themes.
+* Follow a mobile-first responsive design approach.
+* Use `pnpm` as the package manager for the frontend.
+* ALWAYS read `openapi.json` first when generating API calls, interfaces, or mock data to ensure perfect alignment with the backend API.

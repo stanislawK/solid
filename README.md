@@ -11,6 +11,11 @@ FastAPI service for managing plant data, enriched from Wikipedia and summarized 
 - Plant CRUD and Wikipedia-driven plant creation
 - External data fetching via `curl_cffi` with browser impersonation
 - SOLID-inspired architecture (repositories, services, protocols)
+- Frontend built with React, Vite, and pnpm
+- Component-driven UI using shadcn/ui
+- Comprehensive mobile-first design with dark and light themes support
+- Comprehensive Observability with OpenTelemetry (Tempo), Loki + Alloy (Logs), and Prometheus + Grafana (Metrics)
+- Routing via Traefik Ingress
 
 ## Requirements
 
@@ -38,9 +43,11 @@ app/
 	services.py
 frontend/
 	Dockerfile
+	index.html
 	package.json
+	pnpm-lock.yaml
 	src/
-	... (React/Vite app)
+	... (React/Vite app with shadcn/ui components)
 main.py
 ```
 
