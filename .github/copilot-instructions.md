@@ -55,3 +55,10 @@
 * Follow a mobile-first responsive design approach.
 * Use `pnpm` as the package manager for the frontend.
 * ALWAYS read `openapi.json` first when generating API calls, interfaces, or mock data to ensure perfect alignment with the backend API.
+
+7. **Storage & Media:**
+
+* Use the `ImageStorageProtocol` (Dependency Inversion) for storing files.
+* Use `LocalVolumeStorage` implementation for the lean k3s/kind setup.
+* Files are saved to local disk (`STORAGE_DIR` relative path locally, persisted via Kubernetes PVC mounted at `/app/data` in the cluster).
+* FastAPI directly serves these via `StaticFiles`. Do strictly NOT suggest MinIO or external S3 for this project unless explicitly requested.

@@ -1,6 +1,6 @@
 import curl_cffi
 from .schemas import AuthUserInfo, PlantCreate
-from .repositories import IPlantRepository, IUserRepository
+from .repositories import IPlantRepository, IUserRepository, ImageStorageProtocol
 from .models import Plant
 from google import genai
 
@@ -40,28 +40,54 @@ class PlantService:
         repository: IPlantRepository,
         summarizer: IPlantSummarizer,  # Injected Abstraction
         wiki_provider: WikipediaProvider,  # Injected Abstraction
+        image_downloader: ImageDownloaderProtocol,
+        storage_repo: ImageStorageProtocol,
     ):
         self.repository = repository
         self.summarizer = summarizer
         self.wiki_provider = wiki_provider
+        self.image_downloader = image_downloader
+        self.storage_repo = storage_repo
 
-    def create_from_wiki(self, article_title: str) -> Plant:
+    def create_from_wiki(self, article_title: str, user_id: int) -> Plant:
         # 1. Fetch raw data from Wikipedia
         raw_content = self.wiki_provider.get_article(article_title)
 
-        # 2 & 3. Summarize AND Validate in one go
+        # 2. Fetch image url
+        image_url_wiki = self.wiki_provider.get_article_image_url(article_title)
+
+        # 3. Download and store image if available
+        local_image_url = None
+        if image_url_wiki:
+            try:
+                image_bytes = self.image_downloader.download_image(image_url_wiki)
+                local_image_url = self.storage_repo.save_image(
+                    image_url_wiki, image_bytes
+                )
+            except Exception as e:
+                print(f"Failed to download/store image: {e}")
+
+        # 4 & 5. Summarize AND Validate in one go
         # We get a full PlantCreate object back, guaranteed valid!
         plant_dto = self.summarizer.summarize_plant_data(
             raw_content, article_title=article_title
         )
 
-        # 4. Save
-        new_plant_model = Plant(**plant_dto.model_dump())
+        # 6. Save
+        plant_data = plant_dto.model_dump()
+        plant_data["image_url"] = local_image_url
+        new_plant_model = Plant(**plant_data, user_id=user_id)
         return self.repository.save(new_plant_model)
 
-    def create_manual(self, plant_data: PlantCreate) -> Plant:
-        new_plant_model = Plant(**plant_data.model_dump())
+    def create_manual(self, plant_data: PlantCreate, user_id: int) -> Plant:
+        new_plant_model = Plant(**plant_data.model_dump(), user_id=user_id)
         return self.repository.save(new_plant_model)
+
+    def get_all_for_user(self, user_id: int) -> list[Plant]:
+        return self.repository.get_all_by_user_id(user_id)
+
+    def get_one_for_user(self, plant_id: int, user_id: int) -> Plant | None:
+        return self.repository.get_by_id_and_user_id(plant_id, user_id)
 
 
 # --- ABSTRACTION (DIP) ---
@@ -75,6 +101,11 @@ class WikipediaProvider(Protocol):
 
     def search_articles(self, term: str) -> list[str]: ...
     def get_article(self, title: str) -> str: ...
+    def get_article_image_url(self, title: str) -> str | None: ...
+
+
+class ImageDownloaderProtocol(Protocol):
+    def download_image(self, url: str) -> bytes: ...
 
 
 class AuthProvider(Protocol):
@@ -152,6 +183,44 @@ class WikipediaService:
         except Exception as e:
             print(f"Error fetching Wikipedia article: {e}")
             return ""
+
+    def get_article_image_url(self, title: str) -> str | None:
+        params = {
+            "action": "query",
+            "prop": "pageimages",
+            "titles": title,
+            "format": "json",
+            "pithumbsize": 500,
+        }
+        try:
+            response = curl_cffi.get(
+                self.base_url,
+                params=params,
+                impersonate=cast(curl_cffi.requests.BrowserTypeLiteral, self.browser),
+            )
+            response.raise_for_status()
+            data = response.json()
+            pages = data.get("query", {}).get("pages", {})
+            if not pages:
+                return None
+            page = next(iter(pages.values()))
+            return page.get("thumbnail", {}).get("source")
+        except Exception as e:
+            print(f"Error fetching Wikipedia image URL: {e}")
+            return None
+
+
+class CurlImageDownloader(ImageDownloaderProtocol):
+    def __init__(self, browser: curl_cffi.requests.BrowserTypeLiteral):
+        self.browser = browser
+
+    def download_image(self, url: str) -> bytes:
+        response = curl_cffi.get(
+            url,
+            impersonate=cast(curl_cffi.requests.BrowserTypeLiteral, self.browser),
+        )
+        response.raise_for_status()
+        return response.content
 
 
 class IPlantSummarizer(Protocol):

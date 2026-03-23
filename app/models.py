@@ -1,7 +1,15 @@
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, Integer, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Integer,
+    String,
+    Text,
+    func,
+    ForeignKey,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
 
@@ -22,6 +30,12 @@ class Plant(Base):
     added_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"), nullable=False, index=True
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="plants")
 
 
 class User(Base):
@@ -35,3 +49,7 @@ class User(Base):
     picture: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     provider: Mapped[str] = mapped_column(String(50), nullable=False)
     is_active: Mapped[bool] = mapped_column(default=False)
+
+    plants: Mapped[list["Plant"]] = relationship(
+        "Plant", back_populates="user", cascade="all, delete-orphan"
+    )

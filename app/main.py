@@ -1,6 +1,8 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 import sentry_sdk
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
@@ -52,6 +54,9 @@ app.include_router(health.router)
 app.include_router(plants.router)
 app.include_router(wiki.router)
 app.include_router(auth.router)
+
+os.makedirs(settings.storage_dir, exist_ok=True)
+app.mount("/images", StaticFiles(directory=settings.storage_dir), name="images")
 
 # OpenTelemetry Setup
 # This will automatically capture HTTP metrics and traces

@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     session_https_only: bool = False
     session_same_site: Literal["lax", "strict", "none"] = "lax"
     session_max_age_seconds: int = 3600
+    storage_dir: str = "data/images"
 
 
 settings = Settings()

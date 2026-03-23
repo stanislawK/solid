@@ -1,6 +1,31 @@
 from sqlalchemy.orm import Session
 from .models import Plant, User
 from abc import ABC, abstractmethod
+from typing import Protocol
+import os
+import uuid
+
+
+class ImageStorageProtocol(Protocol):
+    def save_image(self, filename: str, image_bytes: bytes) -> str:
+        """Saves an image and returns its public URL path."""
+        ...
+
+
+class LocalVolumeStorage(ImageStorageProtocol):
+    def __init__(self, storage_dir: str = "data/images", base_url: str = "/images"):
+        self.storage_dir = storage_dir
+        self.base_url = base_url
+        os.makedirs(self.storage_dir, exist_ok=True)
+
+    def save_image(self, filename: str, image_bytes: bytes) -> str:
+        ext = filename.split(".")[-1] if "." in filename else "jpg"
+        unique_name = f"{uuid.uuid4().hex}.{ext}"
+        filepath = os.path.join(self.storage_dir, unique_name)
+        with open(filepath, "wb") as f:
+            f.write(image_bytes)
+        return f"{self.base_url}/{unique_name}"
+
 
 """
 D: Dependency Inversion Principle (DIP)
@@ -18,6 +43,14 @@ class IPlantRepository(ABC):
     def get_by_id(self, plant_id: int) -> Plant | None:
         pass
 
+    @abstractmethod
+    def get_all_by_user_id(self, user_id: int) -> list[Plant]:
+        pass
+
+    @abstractmethod
+    def get_by_id_and_user_id(self, plant_id: int, user_id: int) -> Plant | None:
+        pass
+
 
 class SQLAlchemyPlantRepository(IPlantRepository):
     def __init__(self, db: Session):
@@ -31,6 +64,21 @@ class SQLAlchemyPlantRepository(IPlantRepository):
 
     def get_by_id(self, plant_id: int) -> Plant | None:
         return self.db.query(Plant).filter(Plant.id == plant_id).first()
+
+    def get_all_by_user_id(self, user_id: int) -> list[Plant]:
+        return (
+            self.db.query(Plant)
+            .filter(Plant.user_id == user_id)
+            .order_by(Plant.id)
+            .all()
+        )
+
+    def get_by_id_and_user_id(self, plant_id: int, user_id: int) -> Plant | None:
+        return (
+            self.db.query(Plant)
+            .filter(Plant.id == plant_id, Plant.user_id == user_id)
+            .first()
+        )
 
 
 class IUserRepository(ABC):

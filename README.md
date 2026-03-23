@@ -14,6 +14,7 @@ FastAPI service for managing plant data, enriched from Wikipedia and summarized 
 - Frontend built with React, Vite, and pnpm
 - Component-driven UI using shadcn/ui
 - Comprehensive mobile-first design with dark and light themes support
+- Storage handling via Dependency Inversion utilizing local persistent volumes out of the box in k8s
 - Comprehensive Observability with OpenTelemetry (Tempo), Loki + Alloy (Logs), and Prometheus + Grafana (Metrics)
 - Routing via Traefik Ingress
 
@@ -80,6 +81,8 @@ kind load docker-image solid-frontend:latest --name solid-cluster
 Install or upgrade the backend chart:
 - `helm upgrade --install backend ./k8s/backend-service`
 
+*(Note: The backend chart will automatically create a PersistentVolumeClaim (PVC) named `backend-backend-service-data` mounted at `/app/data` to persist file downloads and database states across re-deployments).*
+
 Install or upgrade the frontend chart:
 - `helm upgrade --install frontend ./k8s/frontend-service`
 
@@ -101,6 +104,7 @@ Settings are loaded from `.env` and `solid.env` (see [app/config.py](app/config.
 
 Key variables:
 - `DATABASE_URL` (default: `sqlite:///./app.db`)
+- `STORAGE_DIR` (default: `data/images` locally, should be `/app/data/images` in Docker/K8s to match volume mounts)
 - `GEM_API_KEY` (required for Gemini summarization)
 - `BROWSER` (default: `chrome`, for `curl_cffi` impersonation)
 - `OTEL_ENABLED` (default: `true`)
@@ -197,6 +201,16 @@ In Grafana Explore, query logs with labels like:
 Traefik note:
 - Backend, Collector, Loki, and Tempo communicate via internal Kubernetes Services (`*.svc.cluster.local`), not through Traefik.
 - Use Traefik Ingress only for external browser access (for example Grafana at `monitoring.local`).
+
+## Storage (Image Persistence)
+
+The backend handles image downloads from Wikipedia and saves them locally. This follows SOLID's Dependency Inversion Principle, currently implemented using `LocalVolumeStorage`.
+
+To accommodate this in Kubernetes (especially useful for lightweight k3s instances):
+1. A **PersistentVolumeClaim (PVC)** is integrated directly via `./k8s/backend-service/templates/pvc.yaml`.
+2. The `backend-service` Deployment automatically mounts this volume into the pod at `/app/data`.
+3. You don't need any external service like MinIO or S3. Upon upgrading the helm chart, K8s creates and attaches the volume using its default storage class.
+4. FastAPI serves these cached images persistently using `StaticFiles` mounted at the `/images` route.
 
 Apply network config:
 ```bash

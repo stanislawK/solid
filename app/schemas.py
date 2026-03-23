@@ -20,6 +20,7 @@ class PlantBase(BaseModel):
     description: str | None = None
     watering: int = Field(ge=1, le=10)
     light: int = Field(ge=1, le=10)
+    image_url: str | None = None
 
 
 class PlantCreate(PlantBase):
@@ -31,6 +32,7 @@ class PlantRead(PlantBase):
 
     id: int
     added_at: datetime
+    user_id: int
 
 
 class WikipediaResponse(BaseModel):

@@ -59,6 +59,8 @@ spec:
                   key: GLITCHTIP_DSN
             - name: DATABASE_URL
               value: {{ .Values.DATABASE_URL }}
+            - name: STORAGE_DIR
+              value: /app/data
             {{- if .Values.observability.otel.enabled }}
             - name: OTEL_SERVICE_NAME
               value: {{ .Values.observability.otel.serviceName | quote }}
@@ -87,12 +89,17 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.volumeMounts }}
           volumeMounts:
+            - name: data-volume
+              mountPath: /app/data
+          {{- with .Values.volumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-      {{- with .Values.volumes }}
       volumes:
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: {{ include "backend-service.fullname" . }}-data
+      {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- with .Values.nodeSelector }}

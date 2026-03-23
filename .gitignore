@@ -24,3 +24,8 @@ frontend/dist/
 frontend/dist-ssr/
 frontend/*.local
 frontend/.eslintcache
+
+# Images
+*.png
+*.jpg
+*.jpeg

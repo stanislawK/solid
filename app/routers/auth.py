@@ -118,10 +118,12 @@ async def auth_callback(
     try:
         result = auth_service.process_google_user(user_info)
         access_token = result["access_token"]
-        return RedirectResponse(url=f"{settings.frontend_url}/#access_token={access_token}")
+        return RedirectResponse(
+            url=f"{settings.frontend_url}/#access_token={access_token}"
+        )
     except PermissionError:
         return RedirectResponse(url=f"{settings.frontend_url}/#error=inactive")
-    except Exception as exc:
+    except Exception:
         return RedirectResponse(url=f"{settings.frontend_url}/#error=server_error")
 
 

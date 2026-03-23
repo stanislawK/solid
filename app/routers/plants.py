@@ -1,17 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Plant
-from app.repositories import SQLAlchemyPlantRepository
+from app.models import User
+from app.repositories import SQLAlchemyPlantRepository, LocalVolumeStorage
 from app.schemas import PlantCreate, PlantRead, WikipediaRequest
 from app.services import (
     PlantService,
     WikipediaService,
     GeminiPlantSummarizer,
+    CurlImageDownloader,
 )
 from app.config import settings
+from app.routers.auth import get_current_user
 from typing_extensions import Annotated
 
 router = APIRouter(prefix="/plants", tags=["plants"])
@@ -27,13 +28,21 @@ def get_plant_service(db: Session = Depends(get_db)) -> PlantService:
     """
     # 1. Repositories (Data Access)
     repo = SQLAlchemyPlantRepository(db)
+    storage = LocalVolumeStorage(storage_dir=settings.storage_dir)
 
     # 2. External Providers (Infrastructure)
     wiki = WikipediaService(browser=settings.browser)
     summarizer = GeminiPlantSummarizer(api_key=settings.gem_api_key)
+    downloader = CurlImageDownloader(browser=settings.browser)
 
     # 3. The Service (Business Logic)
-    return PlantService(repository=repo, summarizer=summarizer, wiki_provider=wiki)
+    return PlantService(
+        repository=repo,
+        summarizer=summarizer,
+        wiki_provider=wiki,
+        image_downloader=downloader,
+        storage_repo=storage,
+    )
 
 
 # --- Endpoints ---
@@ -43,13 +52,14 @@ def get_plant_service(db: Session = Depends(get_db)) -> PlantService:
 async def create_plant_from_wikipedia(
     request: WikipediaRequest,
     service: Annotated[PlantService, Depends(get_plant_service)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> PlantRead:
     """
     Endpoint to trigger the Wikipedia + LLM flow.
     """
     try:
         # The Router only orchestrates the call and handles HTTP specifics (errors/status)
-        plant = service.create_from_wiki(request.article_title)
+        plant = service.create_from_wiki(request.article_title, current_user.id)
         return PlantRead.model_validate(plant)
 
     except Exception as e:
@@ -62,24 +72,33 @@ async def create_plant_from_wikipedia(
 
 @router.post("/", response_model=PlantRead, status_code=status.HTTP_201_CREATED)
 def create_plant_manually(
-    payload: PlantCreate, service: Annotated[PlantService, Depends(get_plant_service)]
+    payload: PlantCreate,
+    service: Annotated[PlantService, Depends(get_plant_service)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> PlantRead:
     """
     Classic manual creation (SRP: Reuse the same service logic).
     """
-    plant = service.create_manual(payload)
+    plant = service.create_manual(payload, current_user.id)
     return PlantRead.model_validate(plant)
 
 
 @router.get("", response_model=list[PlantRead])
-def list_plants(db: Session = Depends(get_db)) -> list[PlantRead]:
-    plants = db.execute(select(Plant).order_by(Plant.id)).scalars().all()
+def list_plants(
+    service: Annotated[PlantService, Depends(get_plant_service)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> list[PlantRead]:
+    plants = service.get_all_for_user(current_user.id)
     return [PlantRead.model_validate(p) for p in plants]
 
 
 @router.get("/{plant_id}", response_model=PlantRead)
-def get_plant(plant_id: int, db: Session = Depends(get_db)) -> PlantRead:
-    plant = db.get(Plant, plant_id)
+def get_plant(
+    plant_id: int,
+    service: Annotated[PlantService, Depends(get_plant_service)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> PlantRead:
+    plant = service.get_one_for_user(plant_id, current_user.id)
     if plant is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Plant not found"
