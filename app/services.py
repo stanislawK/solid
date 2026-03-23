@@ -1,5 +1,5 @@
 import curl_cffi
-from .schemas import AuthUserInfo, PlantCreate
+from .schemas import AuthUserInfo, PlantCreate, PlantUpdate
 from .repositories import IPlantRepository, IUserRepository, ImageStorageProtocol
 from .models import Plant
 from google import genai
@@ -11,6 +11,8 @@ from fastapi.responses import RedirectResponse
 from authlib.integrations.starlette_client import OAuth
 import jwt
 from datetime import datetime, timezone, timedelta
+from io import BytesIO
+from PIL import Image, UnidentifiedImageError
 
 """
 O: Open/Closed Principle (OCP)
@@ -42,12 +44,14 @@ class PlantService:
         wiki_provider: WikipediaProvider,  # Injected Abstraction
         image_downloader: ImageDownloaderProtocol,
         storage_repo: ImageStorageProtocol,
+        image_validator: ImageValidatorProtocol,  # Injected Abstraction
     ):
         self.repository = repository
         self.summarizer = summarizer
         self.wiki_provider = wiki_provider
         self.image_downloader = image_downloader
         self.storage_repo = storage_repo
+        self.image_validator = image_validator
 
     def create_from_wiki(self, article_title: str, user_id: int) -> Plant:
         # 1. Fetch raw data from Wikipedia
@@ -89,6 +93,45 @@ class PlantService:
     def get_one_for_user(self, plant_id: int, user_id: int) -> Plant | None:
         return self.repository.get_by_id_and_user_id(plant_id, user_id)
 
+    def update_plant(
+        self, plant_id: int, user_id: int, update_data: PlantUpdate
+    ) -> Plant:
+        plant = self.get_one_for_user(plant_id, user_id)
+        if not plant:
+            raise ValueError("Plant not found")
+        for key, value in update_data.model_dump(exclude_unset=True).items():
+            setattr(plant, key, value)
+        return self.repository.save(plant)
+
+    def update_plant_image(
+        self, plant_id: int, user_id: int, image_bytes: bytes, filename: str
+    ) -> Plant:
+        if not self.image_validator.validate_image(image_bytes):
+            raise ValueError("Invalid image file format")
+
+        plant = self.get_one_for_user(plant_id, user_id)
+        if not plant:
+            raise ValueError("Plant not found")
+
+        # Delete old image if it exists
+        if plant.image_url:
+            self.storage_repo.delete_image(plant.image_url)
+
+        local_image_url = self.storage_repo.save_image(filename, image_bytes)
+        plant.image_url = local_image_url
+        return self.repository.save(plant)
+
+    def delete_plant(self, plant_id: int, user_id: int) -> None:
+        plant = self.get_one_for_user(plant_id, user_id)
+        if not plant:
+            raise ValueError("Plant not found")
+
+        # Delete the associated image when deleting the plant
+        if plant.image_url:
+            self.storage_repo.delete_image(plant.image_url)
+
+        self.repository.delete(plant)
+
 
 # --- ABSTRACTION (DIP) ---
 
@@ -106,6 +149,10 @@ class WikipediaProvider(Protocol):
 
 class ImageDownloaderProtocol(Protocol):
     def download_image(self, url: str) -> bytes: ...
+
+
+class ImageValidatorProtocol(Protocol):
+    def validate_image(self, file_bytes: bytes) -> bool: ...
 
 
 class AuthProvider(Protocol):
@@ -221,6 +268,16 @@ class CurlImageDownloader(ImageDownloaderProtocol):
         )
         response.raise_for_status()
         return response.content
+
+
+class PillowImageValidator(ImageValidatorProtocol):
+    def validate_image(self, file_bytes: bytes) -> bool:
+        try:
+            with Image.open(BytesIO(file_bytes)) as img:
+                img.verify()  # Verifies that it is, in fact, an image
+            return True
+        except (UnidentifiedImageError, IOError):
+            return False
 
 
 class IPlantSummarizer(Protocol):
@@ -380,3 +437,6 @@ class AuthBusinessService:
         user.is_active = False
         self.user_repo.update(user)
         return True
+
+    def get_all_users(self) -> list:
+        return self.user_repo.get_all()

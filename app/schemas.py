@@ -27,6 +27,14 @@ class PlantCreate(PlantBase):
     pass
 
 
+class PlantUpdate(BaseModel):
+    name: str | None = None
+    latin_name: str | None = None
+    description: str | None = None
+    watering: int | None = Field(default=None, ge=1, le=10)
+    light: int | None = Field(default=None, ge=1, le=10)
+
+
 class PlantRead(PlantBase):
     model_config = ConfigDict(from_attributes=True)
 

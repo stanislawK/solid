@@ -11,6 +11,10 @@ class ImageStorageProtocol(Protocol):
         """Saves an image and returns its public URL path."""
         ...
 
+    def delete_image(self, image_url: str) -> None:
+        """Deletes an image by its public URL path."""
+        ...
+
 
 class LocalVolumeStorage(ImageStorageProtocol):
     def __init__(self, storage_dir: str = "data/images", base_url: str = "/images"):
@@ -25,6 +29,14 @@ class LocalVolumeStorage(ImageStorageProtocol):
         with open(filepath, "wb") as f:
             f.write(image_bytes)
         return f"{self.base_url}/{unique_name}"
+
+    def delete_image(self, image_url: str) -> None:
+        if not image_url.startswith(self.base_url):
+            return
+        filename = image_url[len(self.base_url) :].lstrip("/")
+        filepath = os.path.join(self.storage_dir, filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
 
 
 """
@@ -49,6 +61,10 @@ class IPlantRepository(ABC):
 
     @abstractmethod
     def get_by_id_and_user_id(self, plant_id: int, user_id: int) -> Plant | None:
+        pass
+
+    @abstractmethod
+    def delete(self, plant: Plant) -> None:
         pass
 
 
@@ -80,6 +96,10 @@ class SQLAlchemyPlantRepository(IPlantRepository):
             .first()
         )
 
+    def delete(self, plant: Plant) -> None:
+        self.db.delete(plant)
+        self.db.commit()
+
 
 class IUserRepository(ABC):
     @abstractmethod
@@ -96,6 +116,10 @@ class IUserRepository(ABC):
 
     @abstractmethod
     def update(self, user: User) -> User:
+        pass
+
+    @abstractmethod
+    def get_all(self) -> list[User]:
         pass
 
 
@@ -120,3 +144,6 @@ class SQLAlchemyUserRepository(IUserRepository):
         self.db.commit()
         self.db.refresh(user)
         return user
+
+    def get_all(self) -> list[User]:
+        return self.db.query(User).all()

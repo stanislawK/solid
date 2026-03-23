@@ -13,6 +13,7 @@ from app.repositories import IUserRepository, SQLAlchemyUserRepository
 from app.db import get_db
 from app.config import settings
 from app.models import User
+from app.schemas import UserRead
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -164,3 +165,12 @@ async def deactivate_user(
         return {"message": f"User {email} deactivated successfully."}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/users", response_model=list[UserRead])
+async def get_all_users(
+    admin_user: User = Depends(get_admin_user),
+    auth_service: AuthBusinessService = Depends(get_auth_business_service),
+):
+    """Admin-only endpoint to get list of all users and their status."""
+    return auth_service.get_all_users()

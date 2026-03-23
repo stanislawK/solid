@@ -42,6 +42,10 @@ downgrade:
 format:
 	$(PYTHON) ruff format .
 
+.PHONY: openapi
+openapi:
+	$(PYTHON) python -c "import json; from main import app; open('openapi.json', 'w').write(json.dumps(app.openapi(), indent=2))"
+
 .PHONY: reapply-backend
 reapply-backend:
 	helm upgrade --install $(HELM_RELEASE) $(HELM_CHART)

@@ -1,15 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import User
 from app.repositories import SQLAlchemyPlantRepository, LocalVolumeStorage
-from app.schemas import PlantCreate, PlantRead, WikipediaRequest
+from app.schemas import PlantCreate, PlantRead, WikipediaRequest, PlantUpdate
 from app.services import (
     PlantService,
     WikipediaService,
     GeminiPlantSummarizer,
     CurlImageDownloader,
+    PillowImageValidator,
 )
 from app.config import settings
 from app.routers.auth import get_current_user
@@ -34,6 +35,7 @@ def get_plant_service(db: Session = Depends(get_db)) -> PlantService:
     wiki = WikipediaService(browser=settings.browser)
     summarizer = GeminiPlantSummarizer(api_key=settings.gem_api_key)
     downloader = CurlImageDownloader(browser=settings.browser)
+    validator = PillowImageValidator()
 
     # 3. The Service (Business Logic)
     return PlantService(
@@ -42,6 +44,7 @@ def get_plant_service(db: Session = Depends(get_db)) -> PlantService:
         wiki_provider=wiki,
         image_downloader=downloader,
         storage_repo=storage,
+        image_validator=validator,
     )
 
 
@@ -104,3 +107,51 @@ def get_plant(
             status_code=status.HTTP_404_NOT_FOUND, detail="Plant not found"
         )
     return PlantRead.model_validate(plant)
+
+
+@router.patch("/{plant_id}", response_model=PlantRead)
+def update_plant(
+    plant_id: int,
+    payload: PlantUpdate,
+    service: Annotated[PlantService, Depends(get_plant_service)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> PlantRead:
+    try:
+        plant = service.update_plant(plant_id, current_user.id, payload)
+        return PlantRead.model_validate(plant)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.put("/{plant_id}/image", response_model=PlantRead)
+async def update_plant_image(
+    plant_id: int,
+    file: UploadFile,
+    service: Annotated[PlantService, Depends(get_plant_service)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> PlantRead:
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+
+    image_bytes = await file.read()
+    try:
+        plant = service.update_plant_image(
+            plant_id, current_user.id, image_bytes, file.filename
+        )
+        return PlantRead.model_validate(plant)
+    except ValueError as e:
+        if "format" in str(e).lower():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.delete("/{plant_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_plant(
+    plant_id: int,
+    service: Annotated[PlantService, Depends(get_plant_service)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    try:
+        service.delete_plant(plant_id, current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
