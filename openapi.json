@@ -444,7 +444,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/UserMeRead"
+                }
               }
             }
           }
@@ -864,6 +866,50 @@
           "id"
         ],
         "title": "UserRead"
+      },
+      "UserMeRead": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "picture": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Picture"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": false
+          },
+          "is_admin": {
+            "type": "boolean",
+            "title": "Is Admin",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "name",
+          "provider"
+        ],
+        "title": "UserMeRead"
       },
       "ValidationError": {
         "properties": {

@@ -1,12 +1,23 @@
-import { Leaf, LogOut } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Leaf, LogOut, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ModeToggle } from '@/components/mode-toggle';
 import { useAuth } from '@/components/auth-provider';
+import { AdminUsersPanel } from '@/components/admin-users-panel';
 import { Dashboard } from '@/components/dashboard';
+
+type AdminView = 'plants' | 'admin';
 
 export function LandingPage() {
   const { isLoggedIn, user, logout } = useAuth();
+  const [activeView, setActiveView] = useState<AdminView>('plants');
+
+  useEffect(() => {
+    if (!user?.is_admin && activeView === 'admin') {
+      setActiveView('plants');
+    }
+  }, [activeView, user?.is_admin]);
   
   const handleGoogleLogin = () => {
     // The backend uses /auth/login, exposed via Traefik likely at /api/auth/login 
@@ -26,6 +37,17 @@ export function LandingPage() {
           )}
         </div>
         <div className="flex gap-4 items-center">
+          {isLoggedIn && user?.is_admin && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setActiveView((current) => current === 'plants' ? 'admin' : 'plants')}
+              aria-label={activeView === 'plants' ? 'Przejdź do panelu administratora' : 'Przejdź do widoku roślin'}
+              title={activeView === 'plants' ? 'Panel administratora' : 'Widok roślin'}
+            >
+              {activeView === 'plants' ? <ShieldCheck className="w-4 h-4" /> : <Leaf className="w-4 h-4" />}
+            </Button>
+          )}
           {isLoggedIn && (
             <Button variant="ghost" size="sm" onClick={logout}>
               <LogOut className="w-4 h-4 mr-2" /> Wyloguj
@@ -38,7 +60,17 @@ export function LandingPage() {
       {/* Main Content */}
       <main className={`flex-1 w-full max-w-7xl mx-auto flex flex-col items-center p-4 mt-16 ${!isLoggedIn ? 'justify-center' : 'justify-start'}`}>
         {isLoggedIn ? (
-          <Dashboard />
+          activeView === 'admin' ? (
+            <div className="w-full max-w-6xl mx-auto space-y-8">
+              <div className="text-center space-y-4">
+                <h1 className="text-4xl font-bold">Panel administratora</h1>
+                <p className="text-xl text-muted-foreground">Zarządzaj użytkownikami i ich dostępem do aplikacji.</p>
+              </div>
+              <AdminUsersPanel />
+            </div>
+          ) : (
+            <Dashboard />
+          )
         ) : (
           <Card className="max-w-md w-full border-border/40 shadow-xl bg-card">
           <CardHeader className="text-center space-y-4">

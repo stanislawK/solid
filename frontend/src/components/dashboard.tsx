@@ -33,25 +33,36 @@ export function Dashboard() {
       });
   }, [token]);
 
+  const dashboardHeader = (
+    <div className="text-center space-y-4">
+      <h1 className="text-4xl font-bold">Twoja kolekcja roślin</h1>
+      <p className="text-xl text-muted-foreground">Oto rośliny pod Twoją opieką.</p>
+    </div>
+  );
+
   if (loading) {
-    return <div className="text-center p-8">Ładowanie...</div>;
+    return (
+      <div className="w-full max-w-6xl mx-auto space-y-8">
+        {dashboardHeader}
+        <div className="text-center p-8">Ładowanie...</div>
+      </div>
+    );
   }
 
   if (plants.length === 0) {
     return (
-      <div className="text-center space-y-4 max-w-lg mb-8">
-        <h1 className="text-4xl font-bold">Twoja kolekcja roślin</h1>
-        <p className="text-xl text-muted-foreground">Nie masz jeszcze żadnych roślin. Czas to zmienić!</p>
+      <div className="w-full max-w-6xl mx-auto space-y-8">
+        {dashboardHeader}
+        <div className="text-center space-y-4 max-w-lg mb-8 mx-auto">
+          <p className="text-xl text-muted-foreground">Nie masz jeszcze żadnych roślin. Czas to zmienić!</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-8">
-      <div className="text-center space-y-4">
-        <h1 className="text-4xl font-bold">Twoja kolekcja roślin</h1>
-        <p className="text-xl text-muted-foreground">Oto rośliny pod Twoją opieką.</p>
-      </div>
+      {dashboardHeader}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {plants.map((plant) => (

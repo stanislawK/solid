@@ -13,7 +13,7 @@ from app.repositories import IUserRepository, SQLAlchemyUserRepository
 from app.db import get_db
 from app.config import settings
 from app.models import User
-from app.schemas import UserRead
+from app.schemas import UserMeRead, UserRead
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -128,15 +128,18 @@ async def auth_callback(
         return RedirectResponse(url=f"{settings.frontend_url}/#error=server_error")
 
 
-@router.get("/me")
+@router.get("/me", response_model=UserMeRead)
 async def read_users_me(current_user: User = Depends(get_current_user)):
     """Example of an endpoint protected by JWT Token.
     Only logged-in users sending a valid Bearer token can access this."""
-    return {
-        "email": current_user.email,
-        "name": current_user.name,
-        "provider": current_user.provider,
-    }
+    return UserMeRead(
+        email=current_user.email,
+        name=current_user.name,
+        picture=current_user.picture,
+        provider=current_user.provider,
+        is_active=current_user.is_active,
+        is_admin=current_user.email == settings.admin_email,
+    )
 
 
 @router.post("/activate")

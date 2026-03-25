@@ -87,6 +87,10 @@ class UserCreate(UserBase):
     pass
 
 
+class UserMeRead(UserBase):
+    is_admin: bool = False
+
+
 class UserRead(UserBase):
     model_config = ConfigDict(from_attributes=True)
 

@@ -3,7 +3,10 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 type User = {
   email: string;
   name: string;
+  picture?: string | null;
   provider: string;
+  is_active: boolean;
+  is_admin: boolean;
 };
 
 type AuthContextType = {
