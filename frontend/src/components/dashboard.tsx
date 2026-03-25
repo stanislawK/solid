@@ -1,0 +1,68 @@
+import { useEffect, useState } from 'react';
+import { useAuth } from '@/components/auth-provider';
+import { PlantCard, type Plant } from '@/components/plant-card';
+
+export function Dashboard() {
+  const { token } = useAuth();
+  const [plants, setPlants] = useState<Plant[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/plants', {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to fetch plants');
+        return res.json();
+      })
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setPlants(data);
+        } else {
+          setPlants([]);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to fetch plants', err);
+        setPlants([]);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [token]);
+
+  if (loading) {
+    return <div className="text-center p-8">Ładowanie...</div>;
+  }
+
+  if (plants.length === 0) {
+    return (
+      <div className="text-center space-y-4 max-w-lg mb-8">
+        <h1 className="text-4xl font-bold">Twoja kolekcja roślin</h1>
+        <p className="text-xl text-muted-foreground">Nie masz jeszcze żadnych roślin. Czas to zmienić!</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full max-w-6xl mx-auto space-y-8">
+      <div className="text-center space-y-4">
+        <h1 className="text-4xl font-bold">Twoja kolekcja roślin</h1>
+        <p className="text-xl text-muted-foreground">Oto rośliny pod Twoją opieką.</p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        {plants.map((plant) => (
+          <PlantCard 
+            key={plant.id} 
+            plant={plant} 
+            onPlantDeleted={() => setPlants(p => p.filter(x => x.id !== plant.id))}
+            onPlantUpdated={(updated) => setPlants(p => p.map(x => x.id === plant.id ? updated : x))}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}

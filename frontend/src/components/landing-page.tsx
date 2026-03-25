@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ModeToggle } from '@/components/mode-toggle';
 import { useAuth } from '@/components/auth-provider';
+import { Dashboard } from '@/components/dashboard';
 
 export function LandingPage() {
   const { isLoggedIn, user, logout } = useAuth();
@@ -35,12 +36,9 @@ export function LandingPage() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col justify-center items-center p-4">
+      <main className={`flex-1 w-full max-w-7xl mx-auto flex flex-col items-center p-4 mt-16 ${!isLoggedIn ? 'justify-center' : 'justify-start'}`}>
         {isLoggedIn ? (
-          <div className="text-center space-y-4 max-w-lg">
-            <h1 className="text-4xl font-bold">Twoja kolekcja roślin</h1>
-            <p className="text-xl text-muted-foreground">Tu znajdą się Twoje rośliny i porady.</p>
-          </div>
+          <Dashboard />
         ) : (
           <Card className="max-w-md w-full border-border/40 shadow-xl bg-card">
           <CardHeader className="text-center space-y-4">
