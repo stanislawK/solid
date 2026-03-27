@@ -64,10 +64,12 @@ class PlantService:
         self.identifier = identifier
         self.image_processor = image_processor
 
-    def identify_from_image(self, file_bytes: bytes, filename: str, mime_type: str, user_id: int) -> AiPlantIdentificationResponse:
+    def identify_from_image(
+        self, file_bytes: bytes, filename: str, mime_type: str, user_id: int
+    ) -> AiPlantIdentificationResponse:
         if not self.image_validator.validate_image(file_bytes):
             raise ValueError("Invalid image file format")
-            
+
         if not self.identifier or not self.image_processor:
             raise RuntimeError("Plant identifier or image processor is not configured")
 
@@ -75,17 +77,24 @@ class PlantService:
         optimized_bytes = self.image_processor.optimize_image(file_bytes)
         optimized_mime_type = "image/jpeg"
         # Since we convert to JPEG, let's force the stored filename extension to be .jpg
-        optimized_filename = filename.rsplit(".", 1)[0] + ".jpg" if "." in filename else filename + ".jpg"
+        optimized_filename = (
+            filename.rsplit(".", 1)[0] + ".jpg"
+            if "." in filename
+            else filename + ".jpg"
+        )
 
         # 2. Save the local image copy
-        local_image_url = self.storage_repo.save_image(optimized_filename, optimized_bytes)
+        local_image_url = self.storage_repo.save_image(
+            optimized_filename, optimized_bytes
+        )
 
         # 3. Ask Gemini to identify the plant from the optimized image
-        proposals_dto = self.identifier.identify_plant(optimized_bytes, optimized_mime_type)
+        proposals_dto = self.identifier.identify_plant(
+            optimized_bytes, optimized_mime_type
+        )
 
         return AiPlantIdentificationResponse(
-            image_url=local_image_url,
-            proposals=proposals_dto.proposals
+            image_url=local_image_url, proposals=proposals_dto.proposals
         )
 
     def create_from_wiki(self, article_title: str, user_id: int) -> Plant:
@@ -195,7 +204,9 @@ class ImageProcessorProtocol(Protocol):
 
 
 class IPlantIdentifier(Protocol):
-    def identify_plant(self, image_bytes: bytes, mime_type: str) -> AiPlantProposals: ...
+    def identify_plant(
+        self, image_bytes: bytes, mime_type: str
+    ) -> AiPlantProposals: ...
 
 
 class AuthProvider(Protocol):
@@ -236,7 +247,7 @@ class WikipediaService:
             "pilimit": 10,
             "wbptterms": "description",
             "format": "json",
-            "formatversion": 2
+            "formatversion": 2,
         }
         try:
             response = curl_cffi.get(
@@ -250,20 +261,20 @@ class WikipediaService:
             results = []
             for page in pages:
                 title = page.get("title", "")
-                
+
                 snippet = ""
-                if (terms := page.get("terms")) and (descriptions := terms.get("description")):
+                if (terms := page.get("terms")) and (
+                    descriptions := terms.get("description")
+                ):
                     snippet = descriptions[0]
-                
+
                 thumbnail_source = None
                 if thumbnail_info := page.get("thumbnail"):
                     thumbnail_source = thumbnail_info.get("source")
-                
+
                 results.append(
                     WikipediaSearch(
-                        title=title, 
-                        snippet=snippet, 
-                        thumbnail=thumbnail_source
+                        title=title, snippet=snippet, thumbnail=thumbnail_source
                     )
                 )
             return results
@@ -356,10 +367,10 @@ class PillowImageProcessor(ImageProcessorProtocol):
             # Convert to RGB if necessary (e.g. for RGBA/PNG to JPEG)
             if img.mode in ("RGBA", "P"):
                 img = img.convert("RGB")
-            
+
             # thumbnail performs an in-place resize, preserving aspect ratio
             img.thumbnail(self.max_size, Image.Resampling.LANCZOS)
-            
+
             out_bytes = BytesIO()
             img.save(out_bytes, format="JPEG", quality=self.quality)
             return out_bytes.getvalue()
@@ -419,7 +430,7 @@ class GeminiPlantIdentifier(IPlantIdentifier):
             model=self.model,
             contents=[
                 genai.types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                prompt
+                prompt,
             ],
             config=genai.types.GenerateContentConfig(
                 response_mime_type="application/json",

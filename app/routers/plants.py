@@ -4,7 +4,13 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import User
 from app.repositories import SQLAlchemyPlantRepository, LocalVolumeStorage
-from app.schemas import PlantCreate, PlantRead, WikipediaRequest, PlantUpdate, AiPlantIdentificationResponse
+from app.schemas import (
+    PlantCreate,
+    PlantRead,
+    WikipediaRequest,
+    PlantUpdate,
+    AiPlantIdentificationResponse,
+)
 from app.services import (
     PlantService,
     WikipediaService,
@@ -38,7 +44,7 @@ def get_plant_service(db: Session = Depends(get_db)) -> PlantService:
     summarizer = GeminiPlantSummarizer(api_key=settings.gem_api_key)
     downloader = CurlImageDownloader(browser=settings.browser)
     validator = PillowImageValidator()
-    
+
     processor = PillowImageProcessor()
     identifier = GeminiPlantIdentifier(api_key=settings.gem_api_key)
 
@@ -80,7 +86,11 @@ async def create_plant_from_wikipedia(
         )
 
 
-@router.post("/identify", response_model=AiPlantIdentificationResponse, status_code=status.HTTP_200_OK)
+@router.post(
+    "/identify",
+    response_model=AiPlantIdentificationResponse,
+    status_code=status.HTTP_200_OK,
+)
 async def identify_and_store_plant_image(
     file: UploadFile,
     service: Annotated[PlantService, Depends(get_plant_service)],
@@ -94,24 +104,23 @@ async def identify_and_store_plant_image(
 
     image_bytes = await file.read()
     mime_type = file.content_type or "image/jpeg"
-    
+
     try:
         response = service.identify_from_image(
-            file_bytes=image_bytes, 
-            filename=file.filename, 
-            mime_type=mime_type, 
-            user_id=current_user.id
+            file_bytes=image_bytes,
+            filename=file.filename,
+            mime_type=mime_type,
+            user_id=current_user.id,
         )
         return response
     except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, 
-            detail=f"Could not process image data: {str(e)}"
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Could not process image data: {str(e)}",
         )
     except RuntimeError as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
         )
 
 

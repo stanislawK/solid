@@ -15,9 +15,23 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
-import { getPlantImageUrl, type Plant, type PlantUpdatePayload } from '@/lib/plants'
+import {
+  getPlantImageUrl,
+  getWikipediaQueryFromProposal,
+  type AiPlantIdentificationResponse,
+  type Plant,
+  type PlantUpdatePayload,
+} from '@/lib/plants'
 
-type Step = 0 | 1 | 2
+type FlowMode = 'wikipedia' | 'identify'
+
+type Step =
+  | 'entry'
+  | 'wiki-search'
+  | 'identify-upload'
+  | 'identify-proposals'
+  | 'draft-preview'
+  | 'draft-edit'
 
 interface AddPlantFlowProps {
   onClose: () => void
@@ -43,8 +57,24 @@ interface EditFormState {
   light: number
 }
 
-const TOTAL_STEPS = 3
 const SEARCH_DEBOUNCE_MS = 450
+const STEP_ORDER: Step[] = [
+  'entry',
+  'wiki-search',
+  'identify-upload',
+  'identify-proposals',
+  'draft-preview',
+  'draft-edit',
+]
+const DEFAULT_EDIT_FORM: EditFormState = {
+  name: '',
+  latin_name: '',
+  description: '',
+  watering: 5,
+  light: 5,
+}
+const WIKIPEDIA_STEPS: Step[] = ['entry', 'wiki-search', 'draft-preview', 'draft-edit']
+const IDENTIFY_STEPS: Step[] = ['entry', 'identify-upload', 'identify-proposals', 'wiki-search', 'draft-preview', 'draft-edit']
 
 function getPlainTextSnippet(snippet: string) {
   const normalizedSnippet = snippet.trim()
@@ -86,10 +116,30 @@ function buildUpdatePayload(editForm: EditFormState): PlantUpdatePayload {
   }
 }
 
+function getStepCopy(step: Step, flowMode: FlowMode | null) {
+  switch (step) {
+    case 'entry':
+      return 'Wybierz, czy chcesz zacząć od artykułu Wikipedii, czy od rozpoznania rośliny na zdjęciu.'
+    case 'wiki-search':
+      return flowMode === 'identify'
+        ? 'Sprawdź wyniki Wikipedii dla wybranej propozycji albo wpisz dokładniejsze hasło.'
+        : 'Znajdź właściwy artykuł Wikipedii dla swojej rośliny.'
+    case 'identify-upload':
+      return 'Wgraj zdjęcie z dysku albo zrób je aparatem, aby pobrać propozycje od Gemini.'
+    case 'identify-proposals':
+      return 'Wybierz jedną z propozycji Gemini. Potem od razu pokażemy pasujące wyniki Wikipedii.'
+    case 'draft-preview':
+      return 'Poczekaj na wygenerowanie szkicu i zdecyduj, co chcesz zrobić dalej.'
+    case 'draft-edit':
+      return 'Popraw szczegóły rośliny i zakończ dodawanie.'
+  }
+}
+
 export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps) {
   const { token } = useAuth()
   const [carouselApi, setCarouselApi] = useState<CarouselApi>()
-  const [step, setStep] = useState<Step>(0)
+  const [step, setStep] = useState<Step>('entry')
+  const [flowMode, setFlowMode] = useState<FlowMode | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState<WikipediaSearchResult[]>([])
@@ -105,16 +155,24 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
   const [editError, setEditError] = useState<string | null>(null)
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const [imageUploadError, setImageUploadError] = useState<string | null>(null)
+  const [isIdentifying, setIsIdentifying] = useState(false)
+  const [identifyError, setIdentifyError] = useState<string | null>(null)
+  const [identificationResult, setIdentificationResult] = useState<AiPlantIdentificationResponse | null>(null)
+  const [selectedProposalIndex, setSelectedProposalIndex] = useState<number | null>(null)
+  const [identificationFile, setIdentificationFile] = useState<File | null>(null)
   const [isClosingFlow, setIsClosingFlow] = useState(false)
-  const [editForm, setEditForm] = useState<EditFormState>({
-    name: '',
-    latin_name: '',
-    description: '',
-    watering: 5,
-    light: 5,
-  })
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [editForm, setEditForm] = useState<EditFormState>(DEFAULT_EDIT_FORM)
+  const editImageInputRef = useRef<HTMLInputElement>(null)
+  const identifyFileInputRef = useRef<HTMLInputElement>(null)
+  const identifyCameraInputRef = useRef<HTMLInputElement>(null)
   const closeRequestRef = useRef(closeRequestKey)
+
+  const branchSteps = flowMode === 'identify' ? IDENTIFY_STEPS : flowMode === 'wikipedia' ? WIKIPEDIA_STEPS : ['entry']
+  const progressStep = Math.max(1, branchSteps.indexOf(step) + 1)
+  const identifyPreviewUrl = getPlantImageUrl(identificationResult?.image_url)
+  const imageUrl = getPlantImageUrl(draftPlant?.image_url)
+  const selectedProposal = selectedProposalIndex == null ? null : identificationResult?.proposals[selectedProposalIndex] ?? null
+  const isBusy = isDeletingDraft || isClosingFlow || isCreatingPlant || isSavingEdits || isUploadingImage || isIdentifying
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -127,7 +185,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
   }, [searchTerm])
 
   useEffect(() => {
-    carouselApi?.scrollTo(step)
+    carouselApi?.scrollTo(STEP_ORDER.indexOf(step))
   }, [carouselApi, step])
 
   useEffect(() => {
@@ -140,6 +198,11 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
   }, [closeRequestKey])
 
   useEffect(() => {
+    if (step !== 'wiki-search') {
+      setIsSearching(false)
+      return
+    }
+
     if (!token) {
       setSearchResults([])
       setSearchError('Brak autoryzacji do wyszukiwania artykułów.')
@@ -211,7 +274,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
       isActive = false
       controller.abort()
     }
-  }, [debouncedSearchTerm, token])
+  }, [debouncedSearchTerm, step, token])
 
   const isEditDirty = useMemo(() => {
     if (!draftPlant) {
@@ -223,21 +286,36 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
     return JSON.stringify(currentPayload) !== JSON.stringify(originalPayload)
   }, [draftPlant, editForm])
 
-  const resetDraftFlow = () => {
-    setStep(0)
+  const clearSearchState = () => {
+    setSearchTerm('')
+    setDebouncedSearchTerm('')
+    setSearchResults([])
+    setSearchError(null)
+  }
+
+  const clearIdentificationState = () => {
+    setIdentificationResult(null)
+    setSelectedProposalIndex(null)
+    setIdentificationFile(null)
+    setIdentifyError(null)
+  }
+
+  const resetDraftState = () => {
     setSelectedTitle(null)
     setDraftPlant(null)
     setCreationError(null)
     setCleanupError(null)
     setEditError(null)
     setImageUploadError(null)
-    setEditForm({
-      name: '',
-      latin_name: '',
-      description: '',
-      watering: 5,
-      light: 5,
-    })
+    setEditForm(DEFAULT_EDIT_FORM)
+  }
+
+  const resetFlowState = () => {
+    setStep('entry')
+    setFlowMode(null)
+    clearSearchState()
+    clearIdentificationState()
+    resetDraftState()
   }
 
   const deleteDraft = async (plantId: number) => {
@@ -273,7 +351,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
 
   const goBackToSearch = async () => {
     if (!draftPlant) {
-      resetDraftFlow()
+      setStep(flowMode === 'identify' && identificationResult ? 'identify-proposals' : flowMode === 'wikipedia' ? 'wiki-search' : 'entry')
       return
     }
 
@@ -283,11 +361,13 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
       return
     }
 
-    resetDraftFlow()
+    resetDraftState()
+    setStep('wiki-search')
   }
 
   const handleClose = async () => {
     if (!draftPlant) {
+      resetFlowState()
       onClose()
       return
     }
@@ -297,9 +377,47 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
     setIsClosingFlow(false)
 
     if (deleted) {
-      resetDraftFlow()
+      resetFlowState()
       onClose()
     }
+  }
+
+  const uploadPlantImageFile = async (plantId: number, file: File) => {
+    if (!token) {
+      throw new Error('Brak autoryzacji do aktualizacji zdjęcia.')
+    }
+
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const response = await fetch(`/api/plants/${plantId}/image`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    })
+
+    if (!response.ok) {
+      throw new Error('Nie udało się zaktualizować zdjęcia.')
+    }
+
+    return (await response.json()) as Plant
+  }
+
+  const handleChooseFlow = (mode: FlowMode) => {
+    resetDraftState()
+    setFlowMode(mode)
+
+    if (mode === 'wikipedia') {
+      clearIdentificationState()
+      clearSearchState()
+      setStep('wiki-search')
+      return
+    }
+
+    clearSearchState()
+    setStep('identify-upload')
   }
 
   const createPlantFromWikipedia = async (articleTitle: string) => {
@@ -309,7 +427,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
     }
 
     setSelectedTitle(articleTitle)
-    setStep(1)
+  setStep('draft-preview')
     setCreationError(null)
     setCleanupError(null)
     setEditError(null)
@@ -330,7 +448,17 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
         throw new Error('Nie udało się utworzyć rośliny na podstawie Wikipedii.')
       }
 
-      const plant = (await response.json()) as Plant
+      let plant = (await response.json()) as Plant
+
+      if (flowMode === 'identify' && identificationFile) {
+        try {
+          plant = await uploadPlantImageFile(plant.id, identificationFile)
+        } catch (error) {
+          console.error('Failed to apply identification image to draft plant', error)
+          setImageUploadError('Nie udało się przypisać przesłanego zdjęcia do szkicu. Możesz wgrać je ponownie w edycji.')
+        }
+      }
+
       setDraftPlant(plant)
       setEditForm(createEditForm(plant))
     } catch (error) {
@@ -377,7 +505,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
   }
 
   const handleFinish = async () => {
-    if (step === 2 && isEditDirty) {
+    if (step === 'draft-edit' && isEditDirty) {
       const saved = await saveEdits()
       if (!saved) {
         return
@@ -388,20 +516,60 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
     onClose()
   }
 
-  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!draftPlant || !token || !event.target.files?.length) {
+  const runWikipediaSearchForProposal = (proposalIndex: number) => {
+    if (!identificationResult) {
       return
     }
 
-    const file = event.target.files[0]
-    const formData = new FormData()
-    formData.append('file', file)
-    setIsUploadingImage(true)
-    setImageUploadError(null)
+    const proposal = identificationResult.proposals[proposalIndex]
+    const query = getWikipediaQueryFromProposal(proposal)
+
+    if (!query) {
+      setIdentifyError('Wybrana propozycja nie zawiera poprawnej nazwy do wyszukania w Wikipedii.')
+      return
+    }
+
+    setSelectedProposalIndex(proposalIndex)
+    setIdentifyError(null)
+    setSelectedTitle(null)
+    setDraftPlant(null)
+    setCreationError(null)
+    setSearchResults([])
+    setSearchError(null)
+    setSearchTerm(query)
+    setDebouncedSearchTerm(query)
+    setStep('wiki-search')
+  }
+
+  const handleIdentifyFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+
+    if (!file) {
+      return
+    }
+
+    if (!token) {
+      setIdentifyError('Brak autoryzacji do rozpoznawania roślin.')
+      event.target.value = ''
+      return
+    }
+
+    setFlowMode('identify')
+    setIdentificationFile(file)
+    setIdentificationResult(null)
+    setSelectedProposalIndex(null)
+    setIdentifyError(null)
+    setCreationError(null)
+    clearSearchState()
+    resetDraftState()
+    setIsIdentifying(true)
 
     try {
-      const response = await fetch(`/api/plants/${draftPlant.id}/image`, {
-        method: 'PUT',
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await fetch('/api/plants/identify', {
+        method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -409,10 +577,37 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
       })
 
       if (!response.ok) {
-        throw new Error('Nie udało się zaktualizować zdjęcia.')
+        throw new Error('Nie udało się rozpoznać rośliny na zdjęciu.')
       }
 
-      const updatedPlant = (await response.json()) as Plant
+      const data = (await response.json()) as AiPlantIdentificationResponse
+
+      if (!Array.isArray(data.proposals) || data.proposals.length === 0) {
+        throw new Error('Nie udało się wygenerować propozycji roślin.')
+      }
+
+      setIdentificationResult(data)
+      setStep('identify-proposals')
+    } catch (error) {
+      console.error('Failed to identify plant from image', error)
+      setIdentifyError('Nie udało się rozpoznać rośliny na zdjęciu. Spróbuj ponownie innym ujęciem.')
+    } finally {
+      setIsIdentifying(false)
+      event.target.value = ''
+    }
+  }
+
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!draftPlant || !token || !event.target.files?.length) {
+      return
+    }
+
+    const file = event.target.files[0]
+    setIsUploadingImage(true)
+    setImageUploadError(null)
+
+    try {
+      const updatedPlant = await uploadPlantImageFile(draftPlant.id, file)
       setDraftPlant(updatedPlant)
       setEditForm(createEditForm(updatedPlant))
     } catch (error) {
@@ -424,7 +619,9 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
     }
   }
 
-  const imageUrl = getPlantImageUrl(draftPlant?.image_url)
+  const resetDraftFlow = () => {
+    resetFlowState()
+  }
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-8">
@@ -438,7 +635,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
             <div className="space-y-1">
               <h1 className="text-4xl font-bold tracking-tight">Dodaj nową roślinę</h1>
               <p className="max-w-2xl text-base text-muted-foreground md:text-lg">
-                Zacznij od wyszukania artykułu Wikipedii, wygeneruj szkic rośliny i dopracuj go przed zapisaniem na swojej liście.
+                Zacznij od wyszukania artykułu Wikipedii albo od zdjęcia rośliny, wygeneruj szkic i dopracuj go przed zapisaniem na swojej liście.
               </p>
             </div>
           </div>
@@ -449,7 +646,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
             onClick={() => {
               void handleClose()
             }}
-            disabled={isDeletingDraft || isClosingFlow || isCreatingPlant || isSavingEdits || isUploadingImage}
+            disabled={isBusy}
           >
             <ArrowLeft className="size-4" />
             Wróć do kolekcji
@@ -458,21 +655,19 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
 
         <div className="flex flex-col gap-3 rounded-2xl border border-border/50 bg-background/70 px-4 py-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-sm font-medium">Krok {step + 1} z {TOTAL_STEPS}</p>
+            <p className="text-sm font-medium">Krok {progressStep} z {branchSteps.length}</p>
             <p className="text-sm text-muted-foreground">
-              {step === 0 && 'Znajdź właściwy artykuł Wikipedii dla swojej rośliny.'}
-              {step === 1 && 'Poczekaj na wygenerowanie szkicu i zdecyduj, co chcesz zrobić dalej.'}
-              {step === 2 && 'Popraw szczegóły rośliny i zakończ dodawanie.'}
+              {getStepCopy(step, flowMode)}
             </p>
           </div>
 
           <div className="flex items-center gap-2">
-            {Array.from({ length: TOTAL_STEPS }).map((_, index) => (
+            {branchSteps.map((branchStep) => (
               <span
-                key={index}
+                key={branchStep}
                 className={[
                   'h-2.5 rounded-full transition-all',
-                  index === step ? 'w-10 bg-primary' : 'w-2.5 bg-border',
+                  branchStep === step ? 'w-10 bg-primary' : 'w-2.5 bg-border',
                 ].join(' ')}
               />
             ))}
@@ -504,6 +699,53 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
               <CardHeader className="gap-3 border-b border-border/60 pb-5">
                 <div className="flex items-center gap-3">
                   <div className="flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <WandSparkles className="size-5" />
+                  </div>
+                  <div>
+                    <CardTitle>Jak chcesz dodać roślinę?</CardTitle>
+                    <CardDescription>
+                      Możesz skorzystać z obecnego wyszukiwania Wikipedii albo zacząć od rozpoznania rośliny na zdjęciu.
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="grid gap-4 p-6 md:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => handleChooseFlow('wikipedia')}
+                  className="rounded-3xl border border-border/60 bg-background/80 p-6 text-left transition-colors hover:border-primary/50 hover:bg-primary/5"
+                >
+                  <div className="mb-4 inline-flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <Search className="size-5" />
+                  </div>
+                  <h2 className="text-xl font-semibold tracking-tight">Wyszukaj w Wikipedii</h2>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Wpisz nazwę rośliny, wybierz najlepszy artykuł i wygeneruj szkic dokładnie tak jak w obecnym przepływie.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleChooseFlow('identify')}
+                  className="rounded-3xl border border-border/60 bg-background/80 p-6 text-left transition-colors hover:border-primary/50 hover:bg-primary/5"
+                >
+                  <div className="mb-4 inline-flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <Camera className="size-5" />
+                  </div>
+                  <h2 className="text-xl font-semibold tracking-tight">Rozpoznaj ze zdjęcia</h2>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Wgraj zdjęcie z dysku albo zrób je aparatem. Gemini przygotuje propozycje, które od razu sprawdzisz w Wikipedii.
+                  </p>
+                </button>
+              </CardContent>
+            </Card>
+          </CarouselItem>
+
+          <CarouselItem>
+            <Card className="border-border/60 bg-card/95 shadow-sm">
+              <CardHeader className="gap-3 border-b border-border/60 pb-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                     <Search className="size-5" />
                   </div>
                   <div>
@@ -515,6 +757,29 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
                 </div>
               </CardHeader>
               <CardContent className="space-y-6 p-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    {flowMode === 'identify'
+                      ? 'Wracasz do wyszukiwania Wikipedii z wybranej propozycji Gemini. Możesz też wrócić do propozycji i wybrać inną.'
+                      : 'Jeśli chcesz, możesz wrócić i wybrać inny sposób rozpoczęcia dodawania.'}
+                  </p>
+                  <Button
+                    variant="outline"
+                    onClick={() => setStep(flowMode === 'identify' && identificationResult ? 'identify-proposals' : 'entry')}
+                    disabled={isSearching || isCreatingPlant}
+                  >
+                    <ArrowLeft className="size-4" />
+                    {flowMode === 'identify' && identificationResult ? 'Wróć do propozycji' : 'Zmień sposób startu'}
+                  </Button>
+                </div>
+
+                {flowMode === 'identify' && selectedProposal && (
+                  <div className="rounded-2xl border border-border/60 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+                    Wyniki dla propozycji: <span className="font-medium text-foreground">{selectedProposal.name}</span>
+                    {selectedProposal.latin_name && <span> ({selectedProposal.latin_name})</span>}
+                  </div>
+                )}
+
                 <div className="space-y-3">
                   <label htmlFor="wiki-search" className="text-sm font-medium">
                     Szukana roślina
@@ -617,6 +882,190 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
               <CardHeader className="gap-3 border-b border-border/60 pb-5">
                 <div className="flex items-center gap-3">
                   <div className="flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <Camera className="size-5" />
+                  </div>
+                  <div>
+                    <CardTitle>Dodaj zdjęcie rośliny</CardTitle>
+                    <CardDescription>
+                      Wgraj plik z dysku albo skorzystaj z aparatu na telefonie. To zdjęcie stanie się domyślnym zdjęciem rośliny po utworzeniu szkicu.
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6 p-6">
+                <div className="rounded-3xl border border-dashed border-border/70 bg-background/70 p-6 text-center">
+                  <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <ImageIcon className="size-6" />
+                  </div>
+                  <h2 className="text-xl font-semibold tracking-tight">Rozpoznaj roślinę na podstawie zdjęcia</h2>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Najlepiej sprawdzają się wyraźne zdjęcia liści lub całej rośliny w naturalnym świetle.
+                  </p>
+
+                  <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+                    <Button
+                      onClick={() => identifyFileInputRef.current?.click()}
+                      disabled={isIdentifying}
+                    >
+                      <ImageIcon className="size-4" />
+                      {isIdentifying ? 'Rozpoznawanie...' : 'Wybierz z dysku'}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => identifyCameraInputRef.current?.click()}
+                      disabled={isIdentifying}
+                    >
+                      <Camera className="size-4" />
+                      {isIdentifying ? 'Rozpoznawanie...' : 'Zrób zdjęcie'}
+                    </Button>
+                  </div>
+                </div>
+
+                <input
+                  ref={identifyFileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept="image/*"
+                  onChange={(event) => {
+                    void handleIdentifyFileSelected(event)
+                  }}
+                />
+                <input
+                  ref={identifyCameraInputRef}
+                  type="file"
+                  className="hidden"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(event) => {
+                    void handleIdentifyFileSelected(event)
+                  }}
+                />
+
+                {identifyError && (
+                  <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                    {identifyError}
+                  </div>
+                )}
+
+                {identificationFile && !isIdentifying && (
+                  <div className="rounded-2xl border border-border/60 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+                    Ostatnio wybrane zdjęcie: <span className="font-medium text-foreground">{identificationFile.name}</span>
+                  </div>
+                )}
+
+                <div className="flex justify-start">
+                  <Button variant="outline" onClick={() => setStep('entry')} disabled={isIdentifying}>
+                    <ArrowLeft className="size-4" />
+                    Wróć do wyboru sposobu
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </CarouselItem>
+
+          <CarouselItem>
+            <Card className="border-border/60 bg-card/95 shadow-sm">
+              <CardHeader className="gap-3 border-b border-border/60 pb-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <Sparkles className="size-5" />
+                  </div>
+                  <div>
+                    <CardTitle>Wybierz propozycję Gemini</CardTitle>
+                    <CardDescription>
+                      Propozycje są zapisane w tej sesji. Możesz wracać i zmieniać wybór bez ponownego wysyłania zdjęcia.
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6 p-6">
+                {!identificationResult ? (
+                  <div className="rounded-2xl border border-dashed border-border/70 bg-muted/30 px-5 py-8 text-center text-sm text-muted-foreground">
+                    Najpierw wgraj zdjęcie rośliny, aby zobaczyć propozycje identyfikacji.
+                  </div>
+                ) : (
+                  <div className="grid gap-6 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+                    <Card className="overflow-hidden border-border/60 bg-background/70">
+                      <div className="relative h-72 w-full overflow-hidden bg-muted">
+                        {identifyPreviewUrl ? (
+                          <img src={identifyPreviewUrl} alt="Rozpoznawana roślina" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full items-center justify-center">
+                            <ImageIcon className="size-12 text-muted-foreground/50" />
+                          </div>
+                        )}
+                      </div>
+                      <CardContent className="space-y-3 p-5 text-sm text-muted-foreground">
+                        <p>
+                          To zdjęcie zostanie przypisane do szkicu po wybraniu artykułu Wikipedii i utworzeniu rośliny.
+                        </p>
+                        <div className="flex flex-col gap-3 sm:flex-row">
+                          <Button variant="outline" onClick={() => setStep('identify-upload')}>
+                            <ArrowLeft className="size-4" />
+                            Wgraj inne zdjęcie
+                          </Button>
+                          <Button variant="secondary" onClick={() => identifyCameraInputRef.current?.click()}>
+                            <Camera className="size-4" />
+                            Zrób nowe zdjęcie
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <div className="space-y-4">
+                      {identifyError && (
+                        <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                          {identifyError}
+                        </div>
+                      )}
+
+                      {identificationResult.proposals.map((proposal, index) => {
+                        const isSelected = index === selectedProposalIndex
+
+                        return (
+                          <button
+                            key={`${proposal.name}-${proposal.latin_name ?? index}`}
+                            type="button"
+                            onClick={() => runWikipediaSearchForProposal(index)}
+                            className={[
+                              'w-full rounded-2xl border p-5 text-left transition-colors',
+                              isSelected
+                                ? 'border-primary bg-primary/5'
+                                : 'border-border/60 bg-background/80 hover:border-primary/50 hover:bg-primary/5',
+                            ].join(' ')}
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <p className="text-sm font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                                  Propozycja {index + 1}
+                                </p>
+                                <h3 className="mt-2 text-xl font-semibold tracking-tight">{proposal.name}</h3>
+                                {proposal.latin_name && (
+                                  <p className="mt-1 text-sm italic text-muted-foreground">{proposal.latin_name}</p>
+                                )}
+                                <p className="mt-3 text-sm text-muted-foreground">
+                                  Po kliknięciu od razu wyszukamy pasujące artykuły Wikipedii i pokażemy je w kolejnym kroku.
+                                </p>
+                              </div>
+                              <div className="inline-flex size-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                                <Search className="size-4" />
+                              </div>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </CarouselItem>
+
+          <CarouselItem>
+            <Card className="border-border/60 bg-card/95 shadow-sm">
+              <CardHeader className="gap-3 border-b border-border/60 pb-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                     <WandSparkles className="size-5" />
                   </div>
                   <div>
@@ -653,7 +1102,13 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
                 {!isCreatingPlant && creationError && (
                   <div className="space-y-4 rounded-2xl border border-destructive/30 bg-destructive/5 p-5">
                     <p className="text-sm text-destructive">{creationError}</p>
-                    <Button variant="outline" onClick={() => resetDraftFlow()}>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        resetDraftState()
+                        setStep('wiki-search')
+                      }}
+                    >
                       Wróć do wyszukiwania
                     </Button>
                   </div>
@@ -687,7 +1142,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
                             <Trash2 className="size-4" />
                             {isDeletingDraft ? 'Usuwanie...' : 'Wróć do wyszukiwania'}
                           </Button>
-                          <Button variant="secondary" onClick={() => setStep(2)}>
+                          <Button variant="secondary" onClick={() => setStep('draft-edit')}>
                             <Sparkles className="size-4" />
                             Edytuj roślinę
                           </Button>
@@ -736,7 +1191,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
                           </div>
                           <Button
                             variant="outline"
-                            onClick={() => fileInputRef.current?.click()}
+                            onClick={() => editImageInputRef.current?.click()}
                             disabled={isUploadingImage}
                           >
                             <Camera className="size-4" />
@@ -744,7 +1199,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
                           </Button>
                         </div>
                         <input
-                          ref={fileInputRef}
+                          ref={editImageInputRef}
                           type="file"
                           className="hidden"
                           accept="image/*"
@@ -846,7 +1301,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
                       )}
 
                       <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
-                        <Button variant="outline" onClick={() => setStep(1)} disabled={isSavingEdits || isUploadingImage}>
+                        <Button variant="outline" onClick={() => setStep('draft-preview')} disabled={isSavingEdits || isUploadingImage}>
                           <ArrowLeft className="size-4" />
                           Wróć do podglądu
                         </Button>
