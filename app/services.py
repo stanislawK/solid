@@ -1,5 +1,12 @@
 import curl_cffi
-from .schemas import AuthUserInfo, PlantCreate, PlantUpdate
+from .schemas import (
+    AuthUserInfo,
+    PlantCreate,
+    PlantUpdate,
+    WikipediaSearch,
+    AiPlantProposals,
+    AiPlantIdentificationResponse,
+)
 from .repositories import IPlantRepository, IUserRepository, ImageStorageProtocol
 from .models import Plant
 from google import genai
@@ -45,6 +52,8 @@ class PlantService:
         image_downloader: ImageDownloaderProtocol,
         storage_repo: ImageStorageProtocol,
         image_validator: ImageValidatorProtocol,  # Injected Abstraction
+        identifier: IPlantIdentifier | None = None,
+        image_processor: ImageProcessorProtocol | None = None,
     ):
         self.repository = repository
         self.summarizer = summarizer
@@ -52,6 +61,32 @@ class PlantService:
         self.image_downloader = image_downloader
         self.storage_repo = storage_repo
         self.image_validator = image_validator
+        self.identifier = identifier
+        self.image_processor = image_processor
+
+    def identify_from_image(self, file_bytes: bytes, filename: str, mime_type: str, user_id: int) -> AiPlantIdentificationResponse:
+        if not self.image_validator.validate_image(file_bytes):
+            raise ValueError("Invalid image file format")
+            
+        if not self.identifier or not self.image_processor:
+            raise RuntimeError("Plant identifier or image processor is not configured")
+
+        # 1. Optimize image (decrease size & normalize to JPEG)
+        optimized_bytes = self.image_processor.optimize_image(file_bytes)
+        optimized_mime_type = "image/jpeg"
+        # Since we convert to JPEG, let's force the stored filename extension to be .jpg
+        optimized_filename = filename.rsplit(".", 1)[0] + ".jpg" if "." in filename else filename + ".jpg"
+
+        # 2. Save the local image copy
+        local_image_url = self.storage_repo.save_image(optimized_filename, optimized_bytes)
+
+        # 3. Ask Gemini to identify the plant from the optimized image
+        proposals_dto = self.identifier.identify_plant(optimized_bytes, optimized_mime_type)
+
+        return AiPlantIdentificationResponse(
+            image_url=local_image_url,
+            proposals=proposals_dto.proposals
+        )
 
     def create_from_wiki(self, article_title: str, user_id: int) -> Plant:
         # 1. Fetch raw data from Wikipedia
@@ -142,7 +177,7 @@ class WikipediaProvider(Protocol):
     This is our 'Abstraction' layer.
     """
 
-    def search_articles(self, term: str) -> list[str]: ...
+    def search_articles(self, term: str) -> list[WikipediaSearch]: ...
     def get_article(self, title: str) -> str: ...
     def get_article_image_url(self, title: str) -> str | None: ...
 
@@ -153,6 +188,14 @@ class ImageDownloaderProtocol(Protocol):
 
 class ImageValidatorProtocol(Protocol):
     def validate_image(self, file_bytes: bytes) -> bool: ...
+
+
+class ImageProcessorProtocol(Protocol):
+    def optimize_image(self, image_bytes: bytes) -> bytes: ...
+
+
+class IPlantIdentifier(Protocol):
+    def identify_plant(self, image_bytes: bytes, mime_type: str) -> AiPlantProposals: ...
 
 
 class AuthProvider(Protocol):
@@ -181,16 +224,20 @@ class WikipediaService:
         self.language = language
         self.base_url = f"https://{language}.wikipedia.org/w/api.php"
 
-    def search_articles(self, term: str) -> list[str]:
-        # Using the library to find related pages (simplified for example)
+    def search_articles(self, term: str) -> list[WikipediaSearch]:
         params = {
-            "action": "opensearch",
-            "search": term,
-            "limit": 10,
-            "namespace": 0,
+            "action": "query",
+            "generator": "search",
+            "gsrsearch": f"{term} incategory:Rośliny_pokojowe",
+            "gsrlimit": 10,
+            "prop": "pageimages|pageterms",  # to get both the image and the Wikidata description
+            "piprop": "thumbnail",
+            "pithumbsize": 120,  # to hit the Varnish cache
+            "pilimit": 10,
+            "wbptterms": "description",
             "format": "json",
+            "formatversion": 2
         }
-
         try:
             response = curl_cffi.get(
                 self.base_url,
@@ -199,8 +246,27 @@ class WikipediaService:
             )
             response.raise_for_status()
             data = response.json()
-            titles = data[1]  # The second item contains the list of titles
-            return titles
+            pages = data.get("query", {}).get("pages", [])
+            results = []
+            for page in pages:
+                title = page.get("title", "")
+                
+                snippet = ""
+                if (terms := page.get("terms")) and (descriptions := terms.get("description")):
+                    snippet = descriptions[0]
+                
+                thumbnail_source = None
+                if thumbnail_info := page.get("thumbnail"):
+                    thumbnail_source = thumbnail_info.get("source")
+                
+                results.append(
+                    WikipediaSearch(
+                        title=title, 
+                        snippet=snippet, 
+                        thumbnail=thumbnail_source
+                    )
+                )
+            return results
         except Exception as e:
             print(f"Error fetching Wikipedia articles: {e}")
             return []
@@ -280,6 +346,25 @@ class PillowImageValidator(ImageValidatorProtocol):
             return False
 
 
+class PillowImageProcessor(ImageProcessorProtocol):
+    def __init__(self, max_size: tuple[int, int] = (1024, 1024), quality: int = 85):
+        self.max_size = max_size
+        self.quality = quality
+
+    def optimize_image(self, image_bytes: bytes) -> bytes:
+        with Image.open(BytesIO(image_bytes)) as img:
+            # Convert to RGB if necessary (e.g. for RGBA/PNG to JPEG)
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            
+            # thumbnail performs an in-place resize, preserving aspect ratio
+            img.thumbnail(self.max_size, Image.Resampling.LANCZOS)
+            
+            out_bytes = BytesIO()
+            img.save(out_bytes, format="JPEG", quality=self.quality)
+            return out_bytes.getvalue()
+
+
 class IPlantSummarizer(Protocol):
     def summarize_plant_data(self, raw_text: str, article_title: str) -> PlantCreate:
         """
@@ -317,6 +402,34 @@ class GeminiPlantSummarizer:
         if response.text is None:
             raise ValueError("Gemini response text is None")
         return PlantCreate.model_validate_json(response.text)
+
+
+class GeminiPlantIdentifier(IPlantIdentifier):
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+        self.client = genai.Client(api_key=api_key)
+        self.model = model
+
+    def identify_plant(self, image_bytes: bytes, mime_type: str) -> AiPlantProposals:
+        prompt = """
+        You are an expert botanist and horticulturist. Your task is to accurately identify the plant in the provided image.
+        Focus on recognizable features like leaf shape, venation, color patterns, and plant structure.
+        Provide your top 3 most probable candidates. For each candidate, provide the name in Polish and the Latin name.
+        """
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=[
+                genai.types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                prompt
+            ],
+            config=genai.types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=AiPlantProposals,
+            ),
+        )
+        self.client.close()
+        if response.text is None:
+            raise ValueError("Gemini response text is None")
+        return AiPlantProposals.model_validate_json(response.text)
 
 
 class GoogleAuthProvider:

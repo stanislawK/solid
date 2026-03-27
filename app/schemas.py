@@ -43,9 +43,17 @@ class PlantRead(PlantBase):
     user_id: int
 
 
+class WikipediaSearch(BaseModel):
+    title: str
+    snippet: str
+    thumbnail: str | None = None
+
+
 class WikipediaResponse(BaseModel):
     search_term: str
-    results: list[str] = Field(description="List of related Wikipedia article titles")
+    results: list[WikipediaSearch] = Field(
+        description="List of related Wikipedia article titles"
+    )
 
 
 class WikipediaArticleResponse(BaseModel):
@@ -95,3 +103,17 @@ class UserRead(UserBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+
+
+class AiPlantProposal(BaseModel):
+    name: str = Field(description="Name of the plant in Polish")
+    latin_name: str | None = Field(default=None, description="Name of the plant in Latin")
+
+
+class AiPlantProposals(BaseModel):
+    proposals: list[AiPlantProposal] = Field(description="List of top 3 proposals for the plant identity")
+
+
+class AiPlantIdentificationResponse(BaseModel):
+    image_url: str
+    proposals: list[AiPlantProposal]

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth-provider';
-import { PlantCard, type Plant } from '@/components/plant-card';
+import { PlantCard } from '@/components/plant-card';
+import type { Plant } from '@/lib/plants';
 
 export function Dashboard() {
   const { token } = useAuth();

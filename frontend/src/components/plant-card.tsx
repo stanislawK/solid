@@ -1,5 +1,4 @@
 import { useState, useRef } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -15,17 +14,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Droplets, Sun, Image as ImageIcon, Edit, Trash2, Camera, Check, X } from 'lucide-react';
 import { useAuth } from '@/components/auth-provider';
-
-export interface Plant {
-  id: number;
-  name: string;
-  latin_name?: string;
-  description?: string;
-  watering: number;
-  light: number;
-  image_url?: string;
-  added_at: string;
-}
+import { PlantPreviewCard } from '@/components/plant-preview-card';
+import { getPlantImageUrl, type Plant } from '@/lib/plants';
 
 interface PlantCardProps {
   plant: Plant;
@@ -50,9 +40,7 @@ export function PlantCard({ plant: initialPlant, onPlantDeleted, onPlantUpdated 
     light: plant.light,
   });
 
-  const imageUrl = plant.image_url?.startsWith('/images') 
-    ? `/api${plant.image_url}` 
-    : plant.image_url;
+  const imageUrl = getPlantImageUrl(plant.image_url);
 
   const handleDelete = async () => {
     if (!confirm('Czy na pewno chcesz usunąć tę roślinę?')) return;
@@ -148,49 +136,9 @@ export function PlantCard({ plant: initialPlant, onPlantDeleted, onPlantUpdated 
   return (
     <Dialog>
       <DialogTrigger className="block w-full h-full p-0 bg-transparent border-0 text-left focus:outline-none">
-        <Card className="overflow-hidden hover:shadow-lg transition-shadow duration-300 flex flex-col h-full bg-card group cursor-pointer">
-          <div className="relative w-full h-48 bg-muted flex items-center justify-center shrink-0 overflow-hidden">
-            {imageUrl ? (
-              <img
-                src={imageUrl}
-                alt={plant.name}
-                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-              />
-            ) : (
-              <ImageIcon className="w-12 h-12 text-muted-foreground/50" />
-            )}
-          </div>
-          
-          <CardContent className="p-5 flex-1 flex flex-col">
-            <div className="mb-3">
-              <h3 className="text-xl font-bold line-clamp-1" title={plant.name}>{plant.name}</h3>
-              {plant.latin_name && (
-                <p className="text-sm italic text-muted-foreground line-clamp-1" title={plant.latin_name}>
-                  {plant.latin_name}
-                </p>
-              )}
-            </div>
-
-            {plant.description && (
-              <div className="mb-4 flex-1">
-                <p className="text-sm text-muted-foreground line-clamp-3" title={plant.description}>
-                  {plant.description}
-                </p>
-              </div>
-            )}
-            
-            <div className="mt-auto pt-4 border-t border-border/50 flex justify-between items-center text-sm text-muted-foreground">
-              <div className="flex items-center gap-1.5" title={`Podlewanie: ${plant.watering}/10`}>
-                <Droplets className="w-4 h-4 text-blue-500" />
-                <span>{plant.watering}/10</span>
-              </div>
-              <div className="flex items-center gap-1.5" title={`Naświetlenie: ${plant.light}/10`}>
-                <Sun className="w-4 h-4 text-amber-500" />
-                <span>{plant.light}/10</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="group h-full cursor-pointer">
+          <PlantPreviewCard plant={plant} className="h-full hover:shadow-lg group-hover:shadow-lg" />
+        </div>
       </DialogTrigger>
 
       <DialogContent className="sm:max-w-md w-11/12 max-h-[90vh] overflow-y-auto overflow-x-hidden">

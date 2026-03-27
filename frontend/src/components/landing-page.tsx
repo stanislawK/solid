@@ -1,23 +1,29 @@
 import { useEffect, useState } from 'react';
-import { Leaf, LogOut, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Leaf, LogOut, Plus, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ModeToggle } from '@/components/mode-toggle';
 import { useAuth } from '@/components/auth-provider';
 import { AdminUsersPanel } from '@/components/admin-users-panel';
+import { AddPlantFlow } from '@/components/add-plant-flow';
 import { Dashboard } from '@/components/dashboard';
 
-type AdminView = 'plants' | 'admin';
+type AdminView = 'plants' | 'add-plant' | 'admin';
 
 export function LandingPage() {
   const { isLoggedIn, user, logout } = useAuth();
   const [activeView, setActiveView] = useState<AdminView>('plants');
+  const [addPlantCloseRequestKey, setAddPlantCloseRequestKey] = useState(0);
 
   useEffect(() => {
     if (!user?.is_admin && activeView === 'admin') {
       setActiveView('plants');
     }
   }, [activeView, user?.is_admin]);
+
+  const handleReturnToPlants = () => {
+    setActiveView('plants');
+  };
   
   const handleGoogleLogin = () => {
     // The backend uses /auth/login, exposed via Traefik likely at /api/auth/login 
@@ -37,10 +43,34 @@ export function LandingPage() {
           )}
         </div>
         <div className="flex gap-4 items-center">
+          {isLoggedIn && (
+            activeView === 'add-plant' ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setAddPlantCloseRequestKey((current) => current + 1)}
+                aria-label="Wróć do widoku roślin"
+                title="Wróć do widoku roślin"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </Button>
+            ) : activeView === 'plants' ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setActiveView('add-plant')}
+                aria-label="Dodaj nową roślinę"
+                title="Dodaj nową roślinę"
+              >
+                <Plus className="w-4 h-4" />
+              </Button>
+            ) : null
+          )}
           {isLoggedIn && user?.is_admin && (
             <Button
               variant="ghost"
               size="icon"
+              disabled={activeView === 'add-plant'}
               onClick={() => setActiveView((current) => current === 'plants' ? 'admin' : 'plants')}
               aria-label={activeView === 'plants' ? 'Przejdź do panelu administratora' : 'Przejdź do widoku roślin'}
               title={activeView === 'plants' ? 'Panel administratora' : 'Widok roślin'}
@@ -68,6 +98,8 @@ export function LandingPage() {
               </div>
               <AdminUsersPanel />
             </div>
+          ) : activeView === 'add-plant' ? (
+            <AddPlantFlow onClose={handleReturnToPlants} closeRequestKey={addPlantCloseRequestKey} />
           ) : (
             <Dashboard />
           )

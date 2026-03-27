@@ -4,13 +4,15 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import User
 from app.repositories import SQLAlchemyPlantRepository, LocalVolumeStorage
-from app.schemas import PlantCreate, PlantRead, WikipediaRequest, PlantUpdate
+from app.schemas import PlantCreate, PlantRead, WikipediaRequest, PlantUpdate, AiPlantIdentificationResponse
 from app.services import (
     PlantService,
     WikipediaService,
     GeminiPlantSummarizer,
     CurlImageDownloader,
     PillowImageValidator,
+    PillowImageProcessor,
+    GeminiPlantIdentifier,
 )
 from app.config import settings
 from app.routers.auth import get_current_user
@@ -36,6 +38,9 @@ def get_plant_service(db: Session = Depends(get_db)) -> PlantService:
     summarizer = GeminiPlantSummarizer(api_key=settings.gem_api_key)
     downloader = CurlImageDownloader(browser=settings.browser)
     validator = PillowImageValidator()
+    
+    processor = PillowImageProcessor()
+    identifier = GeminiPlantIdentifier(api_key=settings.gem_api_key)
 
     # 3. The Service (Business Logic)
     return PlantService(
@@ -45,6 +50,8 @@ def get_plant_service(db: Session = Depends(get_db)) -> PlantService:
         image_downloader=downloader,
         storage_repo=storage,
         image_validator=validator,
+        identifier=identifier,
+        image_processor=processor,
     )
 
 
@@ -70,6 +77,41 @@ async def create_plant_from_wikipedia(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Could not process plant data: {str(e)}",
+        )
+
+
+@router.post("/identify", response_model=AiPlantIdentificationResponse, status_code=status.HTTP_200_OK)
+async def identify_and_store_plant_image(
+    file: UploadFile,
+    service: Annotated[PlantService, Depends(get_plant_service)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> AiPlantIdentificationResponse:
+    """
+    Identify a plant from an uploaded image using AI, returning proposals and the saved image URL.
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+
+    image_bytes = await file.read()
+    mime_type = file.content_type or "image/jpeg"
+    
+    try:
+        response = service.identify_from_image(
+            file_bytes=image_bytes, 
+            filename=file.filename, 
+            mime_type=mime_type, 
+            user_id=current_user.id
+        )
+        return response
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, 
+            detail=f"Could not process image data: {str(e)}"
+        )
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
         )
 
 
