@@ -73,6 +73,100 @@
         ]
       }
     },
+    "/plants/from-name-ai": {
+      "post": {
+        "tags": [
+          "plants"
+        ],
+        "summary": "Create Plant From Name Ai",
+        "description": "Endpoint to trigger the pure LLM fallback flow from a plant name.",
+        "operationId": "create_plant_from_name_ai_plants_from_name_ai_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlantNameRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlantRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/plants/identify": {
+      "post": {
+        "tags": [
+          "plants"
+        ],
+        "summary": "Identify And Store Plant Image",
+        "description": "Identify a plant from an uploaded image using AI, returning proposals and the saved image URL.",
+        "operationId": "identify_and_store_plant_image_plants_identify_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_identify_and_store_plant_image_plants_identify_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiPlantIdentificationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/plants/": {
       "post": {
         "tags": [
@@ -391,6 +485,51 @@
         }
       }
     },
+    "/wiki/wikimedia-image": {
+      "get": {
+        "tags": [
+          "wiki"
+        ],
+        "summary": "Get Wikimedia Image",
+        "operationId": "get_wikimedia_image_wiki_wikimedia_image_get",
+        "parameters": [
+          {
+            "name": "latin_name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The Latin plant name used to search Wikimedia Commons",
+              "title": "Latin Name"
+            },
+            "description": "The Latin plant name used to search Wikimedia Commons"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WikimediaImageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/login": {
       "get": {
         "tags": [
@@ -584,6 +723,67 @@
   },
   "components": {
     "schemas": {
+      "AiPlantIdentificationResponse": {
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "title": "Image Url"
+          },
+          "proposals": {
+            "items": {
+              "$ref": "#/components/schemas/AiPlantProposal"
+            },
+            "type": "array",
+            "title": "Proposals"
+          }
+        },
+        "type": "object",
+        "required": [
+          "image_url",
+          "proposals"
+        ],
+        "title": "AiPlantIdentificationResponse"
+      },
+      "AiPlantProposal": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Name of the plant in Polish"
+          },
+          "latin_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latin Name",
+            "description": "Name of the plant in Latin"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "AiPlantProposal"
+      },
+      "Body_identify_and_store_plant_image_plants_identify_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_identify_and_store_plant_image_plants_identify_post"
+      },
       "Body_update_plant_image_plants__plant_id__image_put": {
         "properties": {
           "file": {
@@ -672,6 +872,17 @@
               }
             ],
             "title": "Image Url"
+          },
+          "image_search_query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Search Query"
           }
         },
         "type": "object",
@@ -681,6 +892,24 @@
           "light"
         ],
         "title": "PlantCreate"
+      },
+      "PlantNameRequest": {
+        "properties": {
+          "plant_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Plant Name",
+            "description": "The name of the plant to generate data for.",
+            "examples": [
+              "Fikus"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "plant_name"
+        ],
+        "title": "PlantNameRequest"
       },
       "PlantRead": {
         "properties": {
@@ -732,6 +961,17 @@
               }
             ],
             "title": "Image Url"
+          },
+          "image_search_query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Search Query"
           },
           "id": {
             "type": "integer",
@@ -823,50 +1063,6 @@
         "type": "object",
         "title": "PlantUpdate"
       },
-      "UserRead": {
-        "properties": {
-          "email": {
-            "type": "string",
-            "title": "Email"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "picture": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Picture"
-          },
-          "provider": {
-            "type": "string",
-            "title": "Provider"
-          },
-          "is_active": {
-            "type": "boolean",
-            "title": "Is Active",
-            "default": false
-          },
-          "id": {
-            "type": "integer",
-            "title": "Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "email",
-          "name",
-          "provider",
-          "id"
-        ],
-        "title": "UserRead"
-      },
       "UserMeRead": {
         "properties": {
           "email": {
@@ -911,6 +1107,50 @@
         ],
         "title": "UserMeRead"
       },
+      "UserRead": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "picture": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Picture"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": false
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "name",
+          "provider",
+          "id"
+        ],
+        "title": "UserRead"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -944,6 +1184,32 @@
         ],
         "title": "ValidationError"
       },
+      "WikimediaImageResponse": {
+        "properties": {
+          "latin_name": {
+            "type": "string",
+            "title": "Latin Name",
+            "description": "The Latin plant name used for Wikimedia Commons lookup"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url",
+            "description": "Direct Wikimedia Commons image URL, or null when nothing was found"
+          }
+        },
+        "type": "object",
+        "required": [
+          "latin_name"
+        ],
+        "title": "WikimediaImageResponse"
+      },
       "WikipediaRequest": {
         "properties": {
           "article_title": {
@@ -970,7 +1236,7 @@
           },
           "results": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/WikipediaSearch"
             },
             "type": "array",
             "title": "Results",
@@ -983,6 +1249,35 @@
           "results"
         ],
         "title": "WikipediaResponse"
+      },
+      "WikipediaSearch": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet"
+          },
+          "thumbnail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "snippet"
+        ],
+        "title": "WikipediaSearch"
       }
     },
     "securitySchemes": {
