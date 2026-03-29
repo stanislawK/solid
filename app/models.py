@@ -31,6 +31,7 @@ class Plant(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    image_search_query: Mapped[str | None] = mapped_column(String(200), nullable=True)
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id"), nullable=False, index=True
     )

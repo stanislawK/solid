@@ -127,6 +127,15 @@ class PlantService:
         new_plant_model = Plant(**plant_data, user_id=user_id)
         return self.repository.save(new_plant_model)
 
+    def create_from_name_ai(self, plant_name: str, user_id: int) -> Plant:
+        # 1. Use the summarizer to validate and generate the Plant data directly
+        plant_dto = self.summarizer.generate_plant_data_from_name(plant_name)
+
+        # 2. Save
+        plant_data = plant_dto.model_dump()
+        new_plant_model = Plant(**plant_data, user_id=user_id)
+        return self.repository.save(new_plant_model)
+
     def create_manual(self, plant_data: PlantCreate, user_id: int) -> Plant:
         new_plant_model = Plant(**plant_data.model_dump(), user_id=user_id)
         return self.repository.save(new_plant_model)
@@ -189,6 +198,7 @@ class WikipediaProvider(Protocol):
     def search_articles(self, term: str) -> list[WikipediaSearch]: ...
     def get_article(self, title: str) -> str: ...
     def get_article_image_url(self, title: str) -> str | None: ...
+    def get_wikimedia_image_url(self, latin_name: str) -> str | None: ...
 
 
 class ImageDownloaderProtocol(Protocol):
@@ -234,6 +244,7 @@ class WikipediaService:
         self.browser = browser
         self.language = language
         self.base_url = f"https://{language}.wikipedia.org/w/api.php"
+        self.commons_base_url = "https://commons.wikimedia.org/w/api.php"
 
     def search_articles(self, term: str) -> list[WikipediaSearch]:
         params = {
@@ -333,6 +344,50 @@ class WikipediaService:
             print(f"Error fetching Wikipedia image URL: {e}")
             return None
 
+    def get_wikimedia_image_url(self, latin_name: str) -> str | None:
+        if not latin_name.strip():
+            return None
+
+        search_queries = [
+            f'"{latin_name}" filetype:bitmap',
+            f'"{latin_name}" plant filetype:bitmap',
+        ]
+
+        for search_query in search_queries:
+            params = {
+                "action": "query",
+                "format": "json",
+                "generator": "search",
+                "gsrsearch": search_query,
+                "gsrnamespace": 6,
+                "gsrlimit": 1,
+                "prop": "imageinfo",
+                "iiprop": "url",
+            }
+            try:
+                response = curl_cffi.get(
+                    self.commons_base_url,
+                    params=params,
+                    impersonate=cast(
+                        curl_cffi.requests.BrowserTypeLiteral, self.browser
+                    ),
+                )
+                response.raise_for_status()
+                data = response.json()
+                pages = data.get("query", {}).get("pages", {})
+                if not pages:
+                    continue
+
+                page = next(iter(pages.values()))
+                image_info = page.get("imageinfo", [])
+                if image_info:
+                    return image_info[0].get("url")
+            except Exception as e:
+                print(f"Error fetching Wikimedia image URL: {e}")
+                return None
+
+        return None
+
 
 class CurlImageDownloader(ImageDownloaderProtocol):
     def __init__(self, browser: curl_cffi.requests.BrowserTypeLiteral):
@@ -384,6 +439,12 @@ class IPlantSummarizer(Protocol):
         """
         ...
 
+    def generate_plant_data_from_name(self, plant_name: str) -> PlantCreate:
+        """
+        Takes a plant name and generates a PlantCreate object.
+        """
+        ...
+
 
 class GeminiPlantSummarizer:
     def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
@@ -413,6 +474,39 @@ class GeminiPlantSummarizer:
         if response.text is None:
             raise ValueError("Gemini response text is None")
         return PlantCreate.model_validate_json(response.text)
+
+    def generate_plant_data_from_name(self, plant_name: str) -> PlantCreate:
+        system_instruction = (
+            "You are a strict botanical expert. You must only provide data for indoor houseplants. "
+            "Write the description strictly in Polish (5-10 sentences). "
+            "If the plant is unknown, imaginary, or not a houseplant, you MUST set the 'name' field "
+            "strictly to 'NOT_A_HOUSEPLANT' and you can fill other fields with any strictly valid dummy values."
+        )
+        prompt = f"""
+        Check if the plant '{plant_name}' exists and is a houseplant.
+        Output the Polish description, Latin name, watering needs (1-10), and light needs (1-10).
+        Output an image_search_query (ideally the Latin name).
+        """
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=PlantCreate,
+                temperature=0.1,
+                system_instruction=system_instruction,
+            ),
+        )
+        self.client.close()
+        if response.text is None:
+            raise ValueError("Gemini response text is None")
+
+        result = PlantCreate.model_validate_json(response.text)
+        if result.name == "NOT_A_HOUSEPLANT":
+            raise ValueError(
+                f"The plant '{plant_name}' is not recognized as a valid indoor houseplant."
+            )
+        return result
 
 
 class GeminiPlantIdentifier(IPlantIdentifier):

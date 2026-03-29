@@ -8,6 +8,7 @@ from app.schemas import (
     PlantCreate,
     PlantRead,
     WikipediaRequest,
+    PlantNameRequest,
     PlantUpdate,
     AiPlantIdentificationResponse,
 )
@@ -80,6 +81,35 @@ async def create_plant_from_wikipedia(
 
     except Exception as e:
         # SRP: The service throws the error, the router decides the HTTP status code
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Could not process plant data: {str(e)}",
+        )
+
+
+@router.post(
+    "/from-name-ai", response_model=PlantRead, status_code=status.HTTP_201_CREATED
+)
+async def create_plant_from_name_ai(
+    request: PlantNameRequest,
+    service: Annotated[PlantService, Depends(get_plant_service)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> PlantRead:
+    """
+    Endpoint to trigger the pure LLM fallback flow from a plant name.
+    """
+    try:
+        plant = service.create_from_name_ai(request.plant_name, current_user.id)
+        return PlantRead.model_validate(plant)
+
+    except ValueError as e:
+        # Expected domain errors (e.g. not a houseplant)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        # General errors
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Could not process plant data: {str(e)}",

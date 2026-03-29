@@ -1,7 +1,7 @@
 from typing_extensions import Annotated
 from fastapi import APIRouter, Query, Depends
 from app.config import settings
-from app.schemas import WikipediaResponse
+from app.schemas import WikimediaImageResponse, WikipediaResponse
 from app.services import WikipediaProvider, WikipediaService
 
 router = APIRouter(prefix="/wiki", tags=["wiki"])
@@ -19,3 +19,18 @@ async def get_wikipedia_articles(
 ):
     titles = service.search_articles(search_term)
     return WikipediaResponse(search_term=search_term, results=titles)
+
+
+@router.get("/wikimedia-image", response_model=WikimediaImageResponse)
+async def get_wikimedia_image(
+    latin_name: Annotated[
+        str,
+        Query(
+            description="The Latin plant name used to search Wikimedia Commons",
+            min_length=1,
+        ),
+    ],
+    service: Annotated[WikipediaProvider, Depends(get_wiki_service)],
+) -> WikimediaImageResponse:
+    image_url = service.get_wikimedia_image_url(latin_name)
+    return WikimediaImageResponse(latin_name=latin_name, image_url=image_url)
