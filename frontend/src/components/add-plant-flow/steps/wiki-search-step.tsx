@@ -22,6 +22,7 @@ interface WikiSearchStepProps {
   onSearchTermChange: (value: string) => void
   onBack: () => void
   onCreatePlant: (title: string) => void
+  onCreatePlantWithAi: () => void
 }
 
 function getPlainTextSnippet(snippet: string) {
@@ -53,7 +54,10 @@ export function WikiSearchStep({
   onSearchTermChange,
   onBack,
   onCreatePlant,
+  onCreatePlantWithAi,
 }: WikiSearchStepProps) {
+  const shouldShowAiTile = !isSearching && debouncedSearchTerm.length >= 2 && !searchError
+
   return (
     <Card className="border-border/60 bg-card/95 shadow-sm">
       <CardHeader className="gap-3 border-b border-border/60 pb-5">
@@ -134,7 +138,7 @@ export function WikiSearchStep({
 
             {!isSearching && debouncedSearchTerm.length >= 2 && searchResults.length === 0 && !searchError && (
               <div className="col-span-full rounded-2xl border border-dashed border-border/70 bg-muted/30 px-5 py-8 text-center text-sm text-muted-foreground">
-                Nie znaleziono pasujących artykułów. Spróbuj innej nazwy lub doprecyzuj zapytanie.
+                Nie znaleziono pasujących artykułów. Możesz spróbować innej nazwy albo skorzystać z kafelka AI poniżej.
               </div>
             )}
 
@@ -172,6 +176,33 @@ export function WikiSearchStep({
                   </button>
                 )
               })}
+
+            {shouldShowAiTile && (
+              <button
+                type="button"
+                onClick={onCreatePlantWithAi}
+                className="group overflow-hidden rounded-2xl border border-border/60 bg-background/80 text-left transition-colors hover:border-primary/50 hover:bg-primary/5 disabled:pointer-events-none disabled:opacity-50"
+                disabled={isCreatingPlant}
+              >
+                <div className="flex min-h-32">
+                  <div className="flex w-28 shrink-0 items-center justify-center bg-primary/10 text-primary">
+                    <Sparkles className="size-8" />
+                  </div>
+
+                  <div className="flex flex-1 flex-col p-4">
+                    <div className="mb-3 inline-flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+                      <Sparkles className="size-4" />
+                    </div>
+                    <p className="font-medium leading-relaxed">Utwórz przy użyciu AI</p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {flowMode === 'identify'
+                        ? 'Wygenerujemy szkic na podstawie nazwy i zachowamy przesłane zdjęcie zamiast pobierać obraz z Wikipedii lub Wikimedia Commons.'
+                        : 'Wygenerujemy szkic na podstawie nazwy rośliny, nawet jeśli chcesz pominąć dostępne artykuły Wikipedii.'}
+                    </p>
+                  </div>
+                </div>
+              </button>
+            )}
           </div>
         </div>
       </CardContent>

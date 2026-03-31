@@ -1,6 +1,12 @@
 from .auth import AuthUserInfo, Token, UserBase, UserCreate, UserMeRead, UserRead
 from .health import HealthResponse
-from .plants import PlantBase, PlantCreate, PlantRead, PlantUpdate
+from .plants import (
+    PlantBase,
+    PlantCreate,
+    PlantImageUrlUpdate,
+    PlantRead,
+    PlantUpdate,
+)
 from .plants_ai import (
     AiPlantIdentificationResponse,
     AiPlantProposal,
@@ -23,6 +29,7 @@ __all__ = [
     "HealthResponse",
     "PlantBase",
     "PlantCreate",
+    "PlantImageUrlUpdate",
     "PlantNameRequest",
     "PlantRead",
     "PlantUpdate",

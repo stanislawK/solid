@@ -6,6 +6,7 @@ export interface Plant {
   watering: number
   light: number
   image_url?: string | null
+  image_search_query?: string | null
   added_at: string
   user_id: number
 }

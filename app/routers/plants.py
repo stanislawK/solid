@@ -6,6 +6,7 @@ from app.models import User
 from app.repositories import SQLAlchemyPlantRepository, LocalVolumeStorage
 from app.schemas import (
     PlantCreate,
+    PlantImageUrlUpdate,
     PlantRead,
     WikipediaRequest,
     PlantNameRequest,
@@ -76,7 +77,11 @@ async def create_plant_from_wikipedia(
     """
     try:
         # The Router only orchestrates the call and handles HTTP specifics (errors/status)
-        plant = service.create_from_wiki(request.article_title, current_user.id)
+        plant = service.create_from_wiki(
+            request.article_title,
+            current_user.id,
+            preferred_image_url=request.preferred_image_url,
+        )
         return PlantRead.model_validate(plant)
 
     except Exception as e:
@@ -99,7 +104,11 @@ async def create_plant_from_name_ai(
     Endpoint to trigger the pure LLM fallback flow from a plant name.
     """
     try:
-        plant = service.create_from_name_ai(request.plant_name, current_user.id)
+        plant = service.create_from_name_ai(
+            request.plant_name,
+            current_user.id,
+            preferred_image_url=request.preferred_image_url,
+        )
         return PlantRead.model_validate(plant)
 
     except ValueError as e:
@@ -224,6 +233,29 @@ async def update_plant_image(
         if "format" in str(e).lower():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.put("/{plant_id}/image/from-url", response_model=PlantRead)
+def update_plant_image_from_url(
+    plant_id: int,
+    payload: PlantImageUrlUpdate,
+    service: Annotated[PlantService, Depends(get_plant_service)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> PlantRead:
+    try:
+        plant = service.update_plant_image_from_url(
+            plant_id, current_user.id, payload.image_url
+        )
+        return PlantRead.model_validate(plant)
+    except ValueError as e:
+        if "format" in str(e).lower():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Could not process image data: {str(e)}",
+        )
 
 
 @router.delete("/{plant_id}", status_code=status.HTTP_204_NO_CONTENT)

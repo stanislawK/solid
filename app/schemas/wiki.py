@@ -36,6 +36,11 @@ class WikipediaRequest(BaseModel):
         min_length=1,
         examples=["Monstera deliciosa"],
     )
+    preferred_image_url: str | None = Field(
+        default=None,
+        description="Previously stored local image URL to keep on the created plant instead of fetching a Wikipedia image.",
+        examples=["/images/monstera.jpg"],
+    )
 
 
 class PlantNameRequest(BaseModel):
@@ -44,4 +49,9 @@ class PlantNameRequest(BaseModel):
         description="The name of the plant to generate data for.",
         min_length=1,
         examples=["Fikus"],
+    )
+    preferred_image_url: str | None = Field(
+        default=None,
+        description="Previously stored local image URL to keep on the created plant and skip Wikimedia image lookup.",
+        examples=["/images/fikus.jpg"],
     )

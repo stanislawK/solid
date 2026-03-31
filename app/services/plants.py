@@ -59,14 +59,33 @@ class PlantService:
         self.identifier = identifier
         self.image_processor = image_processor
 
+    def _remove_existing_image(self, plant: Plant) -> None:
+        if plant.image_url:
+            self.storage_repo.delete_image(plant.image_url)
+
+    def _store_image_bytes(self, filename: str, image_bytes: bytes) -> str:
+        if not self.image_validator.validate_image(image_bytes):
+            raise ValueError("Invalid image file format")
+
+        return self.storage_repo.save_image(filename, image_bytes)
+
+    def _download_and_store_image(self, image_url: str) -> str:
+        image_bytes = self.image_downloader.download_image(image_url)
+        return self._store_image_bytes(image_url, image_bytes)
+
+    def _replace_plant_image(self, plant: Plant, local_image_url: str) -> Plant:
+        self._remove_existing_image(plant)
+        plant.image_url = local_image_url
+        return self.repository.save(plant)
+
     def identify_from_image(
         self, file_bytes: bytes, filename: str, mime_type: str, user_id: int
     ) -> AiPlantIdentificationResponse:
-        if not self.image_validator.validate_image(file_bytes):
-            raise ValueError("Invalid image file format")
-
         if not self.identifier or not self.image_processor:
             raise RuntimeError("Plant identifier or image processor is not configured")
+
+        if not self.image_validator.validate_image(file_bytes):
+            raise ValueError("Invalid image file format")
 
         optimized_bytes = self.image_processor.optimize_image(file_bytes)
         optimized_mime_type = "image/jpeg"
@@ -76,9 +95,7 @@ class PlantService:
             else filename + ".jpg"
         )
 
-        local_image_url = self.storage_repo.save_image(
-            optimized_filename, optimized_bytes
-        )
+        local_image_url = self._store_image_bytes(optimized_filename, optimized_bytes)
 
         proposals_dto = self.identifier.identify_plant(
             optimized_bytes, optimized_mime_type
@@ -88,20 +105,23 @@ class PlantService:
             image_url=local_image_url, proposals=proposals_dto.proposals
         )
 
-    def create_from_wiki(self, article_title: str, user_id: int) -> Plant:
+    def create_from_wiki(
+        self,
+        article_title: str,
+        user_id: int,
+        preferred_image_url: str | None = None,
+    ) -> Plant:
         raw_content = self.wiki_provider.get_article(article_title)
 
-        image_url_wiki = self.wiki_provider.get_article_image_url(article_title)
+        local_image_url = preferred_image_url
+        if local_image_url is None:
+            image_url_wiki = self.wiki_provider.get_article_image_url(article_title)
 
-        local_image_url = None
-        if image_url_wiki:
-            try:
-                image_bytes = self.image_downloader.download_image(image_url_wiki)
-                local_image_url = self.storage_repo.save_image(
-                    image_url_wiki, image_bytes
-                )
-            except Exception as e:
-                print(f"Failed to download/store image: {e}")
+            if image_url_wiki:
+                try:
+                    local_image_url = self._download_and_store_image(image_url_wiki)
+                except Exception as e:
+                    print(f"Failed to download/store image: {e}")
 
         plant_dto = self.summarizer.summarize_plant_data(
             raw_content, article_title=article_title
@@ -112,10 +132,17 @@ class PlantService:
         new_plant_model = Plant(**plant_data, user_id=user_id)
         return self.repository.save(new_plant_model)
 
-    def create_from_name_ai(self, plant_name: str, user_id: int) -> Plant:
+    def create_from_name_ai(
+        self,
+        plant_name: str,
+        user_id: int,
+        preferred_image_url: str | None = None,
+    ) -> Plant:
         plant_dto = self.summarizer.generate_plant_data_from_name(plant_name)
 
         plant_data = plant_dto.model_dump()
+        if preferred_image_url is not None:
+            plant_data["image_url"] = preferred_image_url
         new_plant_model = Plant(**plant_data, user_id=user_id)
         return self.repository.save(new_plant_model)
 
@@ -135,33 +162,38 @@ class PlantService:
         plant = self.get_one_for_user(plant_id, user_id)
         if not plant:
             raise ValueError("Plant not found")
-        for key, value in update_data.model_dump(exclude_unset=True).items():
+
+        updates = update_data.model_dump(exclude_unset=True)
+
+        for key, value in updates.items():
             setattr(plant, key, value)
         return self.repository.save(plant)
 
     def update_plant_image(
         self, plant_id: int, user_id: int, image_bytes: bytes, filename: str
     ) -> Plant:
-        if not self.image_validator.validate_image(image_bytes):
-            raise ValueError("Invalid image file format")
-
         plant = self.get_one_for_user(plant_id, user_id)
         if not plant:
             raise ValueError("Plant not found")
 
-        if plant.image_url:
-            self.storage_repo.delete_image(plant.image_url)
+        local_image_url = self._store_image_bytes(filename, image_bytes)
+        return self._replace_plant_image(plant, local_image_url)
 
-        local_image_url = self.storage_repo.save_image(filename, image_bytes)
-        plant.image_url = local_image_url
-        return self.repository.save(plant)
+    def update_plant_image_from_url(
+        self, plant_id: int, user_id: int, image_url: str
+    ) -> Plant:
+        plant = self.get_one_for_user(plant_id, user_id)
+        if not plant:
+            raise ValueError("Plant not found")
+
+        local_image_url = self._download_and_store_image(image_url)
+        return self._replace_plant_image(plant, local_image_url)
 
     def delete_plant(self, plant_id: int, user_id: int) -> None:
         plant = self.get_one_for_user(plant_id, user_id)
         if not plant:
             raise ValueError("Plant not found")
 
-        if plant.image_url:
-            self.storage_repo.delete_image(plant.image_url)
+        self._remove_existing_image(plant)
 
         self.repository.delete(plant)

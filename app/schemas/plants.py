@@ -34,6 +34,10 @@ class PlantUpdate(BaseModel):
     light: int | None = Field(default=None, ge=1, le=10)
 
 
+class PlantImageUrlUpdate(BaseModel):
+    image_url: str = Field(min_length=1)
+
+
 class PlantRead(PlantBase):
     model_config = ConfigDict(from_attributes=True)
 

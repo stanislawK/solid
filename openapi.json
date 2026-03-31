@@ -441,6 +441,63 @@
         }
       }
     },
+    "/plants/{plant_id}/image/from-url": {
+      "put": {
+        "tags": [
+          "plants"
+        ],
+        "summary": "Update Plant Image From Url",
+        "operationId": "update_plant_image_from_url_plants__plant_id__image_from_url_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Plant Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlantImageUrlUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlantRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/wiki/get_wikipedia_articles": {
       "get": {
         "tags": [
@@ -903,6 +960,21 @@
             "examples": [
               "Fikus"
             ]
+          },
+          "preferred_image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Image Url",
+            "description": "Previously stored local image URL to keep on the created plant and skip Wikimedia image lookup.",
+            "examples": [
+              "/images/fikus.jpg"
+            ]
           }
         },
         "type": "object",
@@ -997,6 +1069,20 @@
           "user_id"
         ],
         "title": "PlantRead"
+      },
+      "PlantImageUrlUpdate": {
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Image Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "image_url"
+        ],
+        "title": "PlantImageUrlUpdate"
       },
       "PlantUpdate": {
         "properties": {
@@ -1219,6 +1305,21 @@
             "description": "The exact title of the Wikipedia page to fetch data from.",
             "examples": [
               "Monstera deliciosa"
+            ]
+          },
+          "preferred_image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Image Url",
+            "description": "Previously stored local image URL to keep on the created plant instead of fetching a Wikipedia image.",
+            "examples": [
+              "/images/monstera.jpg"
             ]
           }
         },

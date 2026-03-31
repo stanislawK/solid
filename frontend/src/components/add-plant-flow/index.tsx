@@ -27,6 +27,7 @@ import {
   type AiPlantIdentificationResponse,
   type Plant,
 } from '@/lib/plants'
+import { createPlantFromNameAiDraft } from '@/lib/plant-drafts'
 import {
   getStepCopy,
   IDENTIFY_STEPS,
@@ -333,7 +334,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
     }
 
     setSelectedTitle(articleTitle)
-  setStep('draft-preview')
+    setStep('draft-preview')
     setCreationError(null)
     setCleanupError(null)
     setEditError(null)
@@ -341,35 +342,73 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
     setIsCreatingPlant(true)
 
     try {
+      const preferredImageUrl = flowMode === 'identify' ? identificationResult?.image_url ?? null : null
       const response = await fetch('/api/plants/wiki', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ article_title: articleTitle }),
+        body: JSON.stringify({
+          article_title: articleTitle,
+          preferred_image_url: preferredImageUrl,
+        }),
       })
 
       if (!response.ok) {
         throw new Error('Nie udało się utworzyć rośliny na podstawie Wikipedii.')
       }
 
-      let plant = (await response.json()) as Plant
-
-      if (flowMode === 'identify' && identificationFile) {
-        try {
-          plant = await uploadPlantImageFile(plant.id, identificationFile)
-        } catch (error) {
-          console.error('Failed to apply identification image to draft plant', error)
-          setImageUploadError('Nie udało się przypisać przesłanego zdjęcia do szkicu. Możesz wgrać je ponownie w edycji.')
-        }
-      }
+      const plant = (await response.json()) as Plant
 
       setDraftPlant(plant)
       setEditForm(createPlantEditForm(plant))
     } catch (error) {
       console.error('Failed to create plant from Wikipedia', error)
       setCreationError('Nie udało się przygotować rośliny z wybranego artykułu. Wróć do wyszukiwania i spróbuj ponownie.')
+    } finally {
+      setIsCreatingPlant(false)
+    }
+  }
+
+  const createPlantFromNameAiFallback = async () => {
+    const plantName = debouncedSearchTerm.trim()
+
+    if (!token) {
+      setCreationError('Brak autoryzacji do utworzenia rośliny.')
+      return
+    }
+
+    if (plantName.length < 2) {
+      setSearchError('Wpisz co najmniej 2 znaki, aby utworzyć roślinę przy użyciu AI.')
+      return
+    }
+
+    setSelectedTitle(`AI: ${plantName}`)
+    setStep('draft-preview')
+    setCreationError(null)
+    setCleanupError(null)
+    setEditError(null)
+    setImageUploadError(null)
+    setIsCreatingPlant(true)
+
+    try {
+      const result = await createPlantFromNameAiDraft({
+        plantName,
+        token,
+        fallbackImageSearchTerm: plantName,
+        preferredImageUrl: flowMode === 'identify' ? identificationResult?.image_url ?? undefined : undefined,
+      })
+
+      if (result.imageLookupFailed) {
+        setImageUploadError('Nie udało się pobrać zdjęcia z Wikimedia Commons. Możesz dodać je ręcznie w edycji.')
+      }
+
+      setDraftPlant(result.plant)
+      setEditForm(createPlantEditForm(result.plant))
+    } catch (error) {
+      console.error('Failed to create plant from AI fallback', error)
+      setCreationError('Nie udało się przygotować rośliny przy użyciu AI. Wróć do wyszukiwania i spróbuj ponownie.')
     } finally {
       setIsCreatingPlant(false)
     }
@@ -620,6 +659,9 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
               onBack={() => setStep(flowMode === 'identify' && identificationResult ? 'identify-proposals' : 'entry')}
               onCreatePlant={(title) => {
                 void createPlantFromWikipedia(title)
+              }}
+              onCreatePlantWithAi={() => {
+                void createPlantFromNameAiFallback()
               }}
             />
           </CarouselItem>
