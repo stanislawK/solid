@@ -32,7 +32,11 @@ class Settings(BaseSettings):
         default="your-very-secure-jwt-secret-key", min_length=32
     )
     jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 1440
+    jwt_access_token_expire_minutes: int = 15
+    auth_refresh_token_expire_days: int = 14
+    auth_access_cookie_name: str = "solid_access_token"
+    auth_refresh_cookie_name: str = "solid_refresh_token"
+    auth_csrf_cookie_name: str = "solid_csrf_token"
     admin_email: str = ""
     session_secret_key: str = Field(default="", min_length=32)
     session_https_only: bool = False

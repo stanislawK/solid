@@ -79,7 +79,7 @@ export function LandingPage() {
             </Button>
           )}
           {isLoggedIn && (
-            <Button variant="ghost" size="sm" onClick={logout}>
+            <Button variant="ghost" size="sm" onClick={() => { void logout(); }}>
               <LogOut className="w-4 h-4 mr-2" /> Wyloguj
             </Button>
           )}

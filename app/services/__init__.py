@@ -5,8 +5,10 @@ from .ai import (
     IPlantSummarizer,
 )
 from .auth import (
+    AccessTokenClaims,
     AuthBusinessService,
     AuthProvider,
+    AuthSessionTokens,
     GoogleAuthProvider,
     ITokenProvider,
     JWTTokenProvider,
@@ -25,6 +27,8 @@ from .wiki import WikipediaProvider, WikipediaService
 __all__ = [
     "AuthBusinessService",
     "AuthProvider",
+    "AccessTokenClaims",
+    "AuthSessionTokens",
     "CurlImageDownloader",
     "DesertStrategy",
     "GeminiPlantIdentifier",

@@ -1,4 +1,5 @@
 import type { Plant } from '@/lib/plants'
+import { apiFetch } from '@/lib/api'
 
 export interface WikimediaImageResponse {
   latin_name: string
@@ -7,7 +8,6 @@ export interface WikimediaImageResponse {
 
 export interface CreatePlantFromNameAiDraftOptions {
   plantName: string
-  token: string
   fallbackImageSearchTerm?: string
   preferredImageUrl?: string
 }
@@ -21,13 +21,6 @@ export interface CreatePlantFromNameAiDraftResult {
 
 interface PlantImageUrlUpdatePayload {
   image_url: string
-}
-
-function createJsonHeaders(token: string) {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${token}`,
-  }
 }
 
 async function parseJsonResponse<T>(response: Response, errorMessage: string): Promise<T> {
@@ -52,10 +45,12 @@ export function getPlantImageSearchQuery(plant: Plant, fallbackSearchTerm?: stri
   return null
 }
 
-export async function createPlantFromNameAi(plantName: string, token: string, preferredImageUrl?: string): Promise<Plant> {
-  const response = await fetch('/api/plants/from-name-ai', {
+export async function createPlantFromNameAi(plantName: string, preferredImageUrl?: string): Promise<Plant> {
+  const response = await apiFetch('/api/plants/from-name-ai', {
     method: 'POST',
-    headers: createJsonHeaders(token),
+    headers: {
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
       plant_name: plantName,
       preferred_image_url: preferredImageUrl ?? null,
@@ -65,20 +60,18 @@ export async function createPlantFromNameAi(plantName: string, token: string, pr
   return parseJsonResponse<Plant>(response, 'Nie udało się utworzyć rośliny przy użyciu AI.')
 }
 
-export async function getWikimediaImage(latinName: string, token: string): Promise<WikimediaImageResponse> {
-  const response = await fetch(`/api/wiki/wikimedia-image?latin_name=${encodeURIComponent(latinName)}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  })
+export async function getWikimediaImage(latinName: string): Promise<WikimediaImageResponse> {
+  const response = await apiFetch(`/api/wiki/wikimedia-image?latin_name=${encodeURIComponent(latinName)}`)
 
   return parseJsonResponse<WikimediaImageResponse>(response, 'Nie udało się pobrać zdjęcia z Wikimedia Commons.')
 }
 
-export async function updatePlantImageFromUrl(plantId: number, payload: PlantImageUrlUpdatePayload, token: string): Promise<Plant> {
-  const response = await fetch(`/api/plants/${plantId}/image/from-url`, {
+export async function updatePlantImageFromUrl(plantId: number, payload: PlantImageUrlUpdatePayload): Promise<Plant> {
+  const response = await apiFetch(`/api/plants/${plantId}/image/from-url`, {
     method: 'PUT',
-    headers: createJsonHeaders(token),
+    headers: {
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify(payload),
   })
 
@@ -87,11 +80,10 @@ export async function updatePlantImageFromUrl(plantId: number, payload: PlantIma
 
 export async function createPlantFromNameAiDraft({
   plantName,
-  token,
   fallbackImageSearchTerm,
   preferredImageUrl,
 }: CreatePlantFromNameAiDraftOptions): Promise<CreatePlantFromNameAiDraftResult> {
-  const plant = await createPlantFromNameAi(plantName, token, preferredImageUrl)
+  const plant = await createPlantFromNameAi(plantName, preferredImageUrl)
 
   if (preferredImageUrl) {
     return {
@@ -114,7 +106,7 @@ export async function createPlantFromNameAiDraft({
   }
 
   try {
-    const wikimediaImage = await getWikimediaImage(imageSearchQuery, token)
+    const wikimediaImage = await getWikimediaImage(imageSearchQuery)
 
     if (!wikimediaImage.image_url) {
       return {
@@ -125,7 +117,7 @@ export async function createPlantFromNameAiDraft({
       }
     }
 
-    const updatedPlant = await updatePlantImageFromUrl(plant.id, { image_url: wikimediaImage.image_url }, token)
+    const updatedPlant = await updatePlantImageFromUrl(plant.id, { image_url: wikimediaImage.image_url })
 
     return {
       plant: updatedPlant,

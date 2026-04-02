@@ -23,10 +23,14 @@ from app.services import (
     GeminiPlantIdentifier,
 )
 from app.config import settings
-from app.routers.auth import get_current_user
+from app.routers.auth import get_current_user, require_csrf_for_cookie_auth
 from typing_extensions import Annotated
 
-router = APIRouter(prefix="/plants", tags=["plants"])
+router = APIRouter(
+    prefix="/plants",
+    tags=["plants"],
+    dependencies=[Depends(require_csrf_for_cookie_auth)],
+)
 
 
 # --- Composition Root (Dependency Injection) ---

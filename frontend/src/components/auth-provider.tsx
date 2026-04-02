@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 
+import { SESSION_EXPIRED_EVENT, apiFetch, refreshAuthSession } from '@/lib/api';
+
 type User = {
   email: string;
   name: string;
@@ -11,85 +13,130 @@ type User = {
 
 type AuthContextType = {
   user: User | null;
-  token: string | null;
   isLoggedIn: boolean;
   isLoading: boolean;
-  logout: () => void;
+  logout: () => Promise<void>;
+  refreshSession: () => Promise<boolean>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(localStorage.getItem('access_token'));
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check hash for access_token or error
-    const hash = window.location.hash;
-    if (hash) {
-      const params = new URLSearchParams(hash.substring(1));
-      const accessToken = params.get('access_token');
-      const error = params.get('error');
+    const params = new URLSearchParams(window.location.search);
+    const error = params.get('auth_error');
 
-      if (accessToken) {
-        localStorage.setItem('access_token', accessToken);
-        setToken(accessToken);
-        window.history.replaceState(null, '', window.location.pathname + window.location.search);
-      } else if (error) {
-        console.error('Login error:', error);
-        window.history.replaceState(null, '', window.location.pathname + window.location.search);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!token) {
-      setUser(null);
-      setIsLoading(false);
+    if (!error) {
       return;
     }
 
-    // Fetch user profile
-    fetch('/api/auth/me', {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    })
-      .then(res => {
-        if (!res.ok) {
-          throw new Error('Unauthorized');
-        }
-        return res.json();
-      })
-      .then((data: User) => {
-        setUser(data);
-      })
-      .catch((err) => {
-        console.error('Failed to fetch user profile', err);
-        setToken(null);
-        localStorage.removeItem('access_token');
-        setUser(null);
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
-  }, [token]);
+    console.error('Login error:', error);
+    params.delete('auth_error');
+    const nextSearch = params.toString();
+    const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`;
+    window.history.replaceState(null, '', nextUrl);
+  }, []);
 
-  const logout = () => {
-    setToken(null);
-    setUser(null);
-    localStorage.removeItem('access_token');
+  useEffect(() => {
+    let isCancelled = false;
+
+    const syncUser = async () => {
+      setIsLoading(true);
+
+      try {
+        const response = await apiFetch('/api/auth/me', {}, { notifyOnUnauthorized: false });
+
+        if (response.status === 401) {
+          if (!isCancelled) {
+            setUser(null);
+          }
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch user profile');
+        }
+
+        const data = (await response.json()) as User;
+        if (!isCancelled) {
+          setUser(data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch user profile', err);
+        if (!isCancelled) {
+          setUser(null);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void syncUser();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setUser(null);
+      setIsLoading(false);
+    };
+
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () => {
+      window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    };
+  }, []);
+
+  const refreshSession = async () => {
+    const refreshed = await refreshAuthSession();
+    if (!refreshed) {
+      setUser(null);
+      return false;
+    }
+
+    try {
+      const response = await apiFetch('/api/auth/me', {}, { retryOnUnauthorized: false, notifyOnUnauthorized: false });
+      if (!response.ok) {
+        setUser(null);
+        return false;
+      }
+
+      const data = (await response.json()) as User;
+      setUser(data);
+      return true;
+    } catch (error) {
+      console.error('Failed to reload user profile after refresh', error);
+      setUser(null);
+      return false;
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await apiFetch('/api/auth/logout', { method: 'POST' }, { retryOnUnauthorized: false, notifyOnUnauthorized: false });
+    } catch (error) {
+      console.error('Failed to log out cleanly', error);
+    } finally {
+      setUser(null);
+    }
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        token,
         isLoggedIn: !!user,
         isLoading,
-        logout
+        logout,
+        refreshSession
       }}
     >
       {children}

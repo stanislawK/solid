@@ -1,5 +1,6 @@
+from datetime import datetime
 from sqlalchemy.orm import Session
-from .models import Plant, User
+from .models import AuthSession, Plant, User
 from abc import ABC, abstractmethod
 from typing import Protocol
 import os
@@ -101,6 +102,44 @@ class SQLAlchemyPlantRepository(IPlantRepository):
         self.db.commit()
 
 
+class IAuthSessionRepository(ABC):
+    @abstractmethod
+    def create(self, auth_session: AuthSession) -> AuthSession:
+        pass
+
+    @abstractmethod
+    def get_active_by_refresh_token_hash(
+        self, refresh_token_hash: str, now: datetime
+    ) -> AuthSession | None:
+        pass
+
+    @abstractmethod
+    def get_active_by_session_id(
+        self, session_id: str, now: datetime
+    ) -> AuthSession | None:
+        pass
+
+    @abstractmethod
+    def rotate(
+        self,
+        auth_session: AuthSession,
+        refresh_token_hash: str,
+        expires_at: datetime,
+        last_used_at: datetime,
+        user_agent: str | None,
+        ip_address: str | None,
+    ) -> AuthSession:
+        pass
+
+    @abstractmethod
+    def revoke(self, auth_session: AuthSession, revoked_at: datetime) -> AuthSession:
+        pass
+
+    @abstractmethod
+    def revoke_all_for_user(self, user_id: int, revoked_at: datetime) -> None:
+        pass
+
+
 class IUserRepository(ABC):
     @abstractmethod
     def get_by_email(self, email: str) -> User | None:
@@ -147,3 +186,74 @@ class SQLAlchemyUserRepository(IUserRepository):
 
     def get_all(self) -> list[User]:
         return self.db.query(User).all()
+
+
+class SQLAlchemyAuthSessionRepository(IAuthSessionRepository):
+    def __init__(self, db: Session):
+        self.db = db
+
+    def create(self, auth_session: AuthSession) -> AuthSession:
+        self.db.add(auth_session)
+        self.db.commit()
+        self.db.refresh(auth_session)
+        return auth_session
+
+    def get_active_by_refresh_token_hash(
+        self, refresh_token_hash: str, now: datetime
+    ) -> AuthSession | None:
+        return (
+            self.db.query(AuthSession)
+            .filter(
+                AuthSession.refresh_token_hash == refresh_token_hash,
+                AuthSession.revoked_at.is_(None),
+                AuthSession.expires_at > now,
+            )
+            .first()
+        )
+
+    def get_active_by_session_id(
+        self, session_id: str, now: datetime
+    ) -> AuthSession | None:
+        return (
+            self.db.query(AuthSession)
+            .filter(
+                AuthSession.session_id == session_id,
+                AuthSession.revoked_at.is_(None),
+                AuthSession.expires_at > now,
+            )
+            .first()
+        )
+
+    def rotate(
+        self,
+        auth_session: AuthSession,
+        refresh_token_hash: str,
+        expires_at: datetime,
+        last_used_at: datetime,
+        user_agent: str | None,
+        ip_address: str | None,
+    ) -> AuthSession:
+        auth_session.refresh_token_hash = refresh_token_hash
+        auth_session.expires_at = expires_at
+        auth_session.last_used_at = last_used_at
+        auth_session.user_agent = user_agent
+        auth_session.ip_address = ip_address
+        self.db.add(auth_session)
+        self.db.commit()
+        self.db.refresh(auth_session)
+        return auth_session
+
+    def revoke(self, auth_session: AuthSession, revoked_at: datetime) -> AuthSession:
+        auth_session.revoked_at = revoked_at
+        self.db.add(auth_session)
+        self.db.commit()
+        self.db.refresh(auth_session)
+        return auth_session
+
+    def revoke_all_for_user(self, user_id: int, revoked_at: datetime) -> None:
+        (
+            self.db.query(AuthSession)
+            .filter(AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None))
+            .update({AuthSession.revoked_at: revoked_at}, synchronize_session=False)
+        )
+        self.db.commit()

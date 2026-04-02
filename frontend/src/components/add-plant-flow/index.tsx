@@ -27,6 +27,7 @@ import {
   type AiPlantIdentificationResponse,
   type Plant,
 } from '@/lib/plants'
+import { apiFetch } from '@/lib/api'
 import { createPlantFromNameAiDraft } from '@/lib/plant-drafts'
 import {
   getStepCopy,
@@ -43,7 +44,7 @@ import {
 
 // Orchestrates the existing add-plant state machine while delegating step rendering to focused modules.
 export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps) {
-  const { token } = useAuth()
+  const { isLoggedIn } = useAuth()
   const [carouselApi, setCarouselApi] = useState<CarouselApi>()
   const [step, setStep] = useState<Step>('entry')
   const [flowMode, setFlowMode] = useState<FlowMode | null>(null)
@@ -110,7 +111,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
       return
     }
 
-    if (!token) {
+    if (!isLoggedIn) {
       setSearchResults([])
       setSearchError('Brak autoryzacji do wyszukiwania artykułów.')
       setIsSearching(false)
@@ -132,12 +133,9 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
       setSearchError(null)
 
       try {
-        const response = await fetch(
+        const response = await apiFetch(
           `/api/wiki/get_wikipedia_articles?search_term=${encodeURIComponent(debouncedSearchTerm)}`,
           {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
             signal: controller.signal,
           }
         )
@@ -181,7 +179,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
       isActive = false
       controller.abort()
     }
-  }, [debouncedSearchTerm, step, token])
+  }, [debouncedSearchTerm, isLoggedIn, step])
 
   const isEditDirty = useMemo(() => {
     if (!draftPlant) {
@@ -226,7 +224,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
   }
 
   const deleteDraft = async (plantId: number) => {
-    if (!token) {
+    if (!isLoggedIn) {
       setCleanupError('Brak autoryzacji do usunięcia roboczej rośliny.')
       return false
     }
@@ -235,11 +233,8 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
     setCleanupError(null)
 
     try {
-      const response = await fetch(`/api/plants/${plantId}`, {
+      const response = await apiFetch(`/api/plants/${plantId}`, {
         method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
       })
 
       if (!response.ok) {
@@ -290,18 +285,15 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
   }
 
   const uploadPlantImageFile = async (plantId: number, file: File) => {
-    if (!token) {
+    if (!isLoggedIn) {
       throw new Error('Brak autoryzacji do aktualizacji zdjęcia.')
     }
 
     const formData = new FormData()
     formData.append('file', file)
 
-    const response = await fetch(`/api/plants/${plantId}/image`, {
+    const response = await apiFetch(`/api/plants/${plantId}/image`, {
       method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
       body: formData,
     })
 
@@ -328,7 +320,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
   }
 
   const createPlantFromWikipedia = async (articleTitle: string) => {
-    if (!token) {
+    if (!isLoggedIn) {
       setCreationError('Brak autoryzacji do utworzenia rośliny.')
       return
     }
@@ -343,11 +335,10 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
 
     try {
       const preferredImageUrl = flowMode === 'identify' ? identificationResult?.image_url ?? null : null
-      const response = await fetch('/api/plants/wiki', {
+      const response = await apiFetch('/api/plants/wiki', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           article_title: articleTitle,
@@ -374,7 +365,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
   const createPlantFromNameAiFallback = async () => {
     const plantName = debouncedSearchTerm.trim()
 
-    if (!token) {
+    if (!isLoggedIn) {
       setCreationError('Brak autoryzacji do utworzenia rośliny.')
       return
     }
@@ -395,7 +386,6 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
     try {
       const result = await createPlantFromNameAiDraft({
         plantName,
-        token,
         fallbackImageSearchTerm: plantName,
         preferredImageUrl: flowMode === 'identify' ? identificationResult?.image_url ?? undefined : undefined,
       })
@@ -415,7 +405,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
   }
 
   const saveEdits = async () => {
-    if (!draftPlant || !token) {
+    if (!draftPlant || !isLoggedIn) {
       return false
     }
 
@@ -423,11 +413,10 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
     setEditError(null)
 
     try {
-      const response = await fetch(`/api/plants/${draftPlant.id}`, {
+      const response = await apiFetch(`/api/plants/${draftPlant.id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(buildPlantUpdatePayload(editForm)),
       })
@@ -493,7 +482,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
       return
     }
 
-    if (!token) {
+    if (!isLoggedIn) {
       setIdentifyError('Brak autoryzacji do rozpoznawania roślin.')
       event.target.value = ''
       return
@@ -513,11 +502,8 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
       const formData = new FormData()
       formData.append('file', file)
 
-      const response = await fetch('/api/plants/identify', {
+      const response = await apiFetch('/api/plants/identify', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
         body: formData,
       })
 
@@ -543,7 +529,7 @@ export function AddPlantFlow({ onClose, closeRequestKey = 0 }: AddPlantFlowProps
   }
 
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!draftPlant || !token || !event.target.files?.length) {
+    if (!draftPlant || !isLoggedIn || !event.target.files?.length) {
       return
     }
 

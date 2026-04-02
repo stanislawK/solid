@@ -4,6 +4,7 @@ import { ShieldCheck, UserRound } from 'lucide-react'
 import { useAuth } from '@/components/auth-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
+import { apiFetch } from '@/lib/api'
 
 type AdminUser = {
   id: number
@@ -15,13 +16,13 @@ type AdminUser = {
 }
 
 export function AdminUsersPanel() {
-  const { token, user } = useAuth()
+  const { user } = useAuth()
   const [users, setUsers] = useState<AdminUser[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [pendingEmails, setPendingEmails] = useState<string[]>([])
 
   useEffect(() => {
-    if (!token || !user?.is_admin) {
+    if (!user?.is_admin) {
       setUsers([])
       setIsLoading(false)
       return
@@ -33,11 +34,7 @@ export function AdminUsersPanel() {
       setIsLoading(true)
 
       try {
-        const response = await fetch('/api/auth/users', {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        })
+        const response = await apiFetch('/api/auth/users')
 
         if (response.status === 403) {
           if (!isCancelled) {
@@ -72,18 +69,15 @@ export function AdminUsersPanel() {
     return () => {
       isCancelled = true
     }
-  }, [token, user?.is_admin])
+  }, [user?.is_admin])
 
   const toggleUserAccess = async (selectedUser: AdminUser, shouldBeActive: boolean) => {
     setPendingEmails((current) => [...current, selectedUser.email])
 
     try {
       const endpoint = shouldBeActive ? 'activate' : 'deactivate'
-      const response = await fetch(`/api/auth/${endpoint}?email=${encodeURIComponent(selectedUser.email)}`, {
+      const response = await apiFetch(`/api/auth/${endpoint}?email=${encodeURIComponent(selectedUser.email)}`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
       })
 
       if (!response.ok) {

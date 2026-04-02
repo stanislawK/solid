@@ -16,6 +16,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { apiFetch } from '@/lib/api'
 import { getPlantImageUrl, type Plant } from '@/lib/plants'
 
 interface PlantCardProps {
@@ -25,7 +26,7 @@ interface PlantCardProps {
 }
 
 export function PlantCard({ plant: initialPlant, onPlantDeleted, onPlantUpdated }: PlantCardProps) {
-  const { token } = useAuth()
+  const { isLoggedIn } = useAuth()
   const [plant, setPlant] = useState(initialPlant)
   const [isEditing, setIsEditing] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -40,11 +41,8 @@ export function PlantCard({ plant: initialPlant, onPlantDeleted, onPlantUpdated 
 
     setIsDeleting(true)
     try {
-      const res = await fetch(`/api/plants/${plant.id}`, {
+      const res = await apiFetch(`/api/plants/${plant.id}`, {
         method: 'DELETE',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
       })
       if (!res.ok) throw new Error('Nie udało się usunąć rośliny')
 
@@ -62,13 +60,17 @@ export function PlantCard({ plant: initialPlant, onPlantDeleted, onPlantUpdated 
   }
 
   const handleSave = async () => {
+    if (!isLoggedIn) {
+      alert('Sesja wygasła. Zaloguj się ponownie.')
+      return
+    }
+
     setIsSaving(true)
     try {
-      const res = await fetch(`/api/plants/${plant.id}`, {
+      const res = await apiFetch(`/api/plants/${plant.id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify(editForm)
       })
@@ -94,11 +96,8 @@ export function PlantCard({ plant: initialPlant, onPlantDeleted, onPlantUpdated 
     formData.append('file', file)
 
     try {
-      const res = await fetch(`/api/plants/${plant.id}/image`, {
+      const res = await apiFetch(`/api/plants/${plant.id}/image`, {
         method: 'PUT',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
         body: formData,
       })
 

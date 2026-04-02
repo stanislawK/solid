@@ -1,19 +1,22 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth-provider';
 import { PlantCard } from '@/components/plant-card';
+import { apiFetch } from '@/lib/api';
 import type { Plant } from '@/lib/plants';
 
 export function Dashboard() {
-  const { token } = useAuth();
+  const { isLoggedIn } = useAuth();
   const [plants, setPlants] = useState<Plant[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/plants', {
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      }
-    })
+    if (!isLoggedIn) {
+      setPlants([]);
+      setLoading(false);
+      return;
+    }
+
+    apiFetch('/api/plants')
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch plants');
         return res.json();
@@ -32,7 +35,7 @@ export function Dashboard() {
       .finally(() => {
         setLoading(false);
       });
-  }, [token]);
+  }, [isLoggedIn]);
 
   const dashboardHeader = (
     <div className="text-center space-y-4">

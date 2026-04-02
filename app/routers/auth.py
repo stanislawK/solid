@@ -1,6 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import RedirectResponse
+import secrets
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from app.services import (
     AuthProvider,
@@ -9,7 +12,12 @@ from app.services import (
     ITokenProvider,
     JWTTokenProvider,
 )
-from app.repositories import IUserRepository, SQLAlchemyUserRepository
+from app.repositories import (
+    IAuthSessionRepository,
+    IUserRepository,
+    SQLAlchemyAuthSessionRepository,
+    SQLAlchemyUserRepository,
+)
 from app.db import get_db
 from app.config import settings
 from app.models import User
@@ -18,7 +26,7 @@ from app.schemas import UserMeRead, UserRead
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # Standard HTTP Bearer scheme for Swagger UI "Paste Token" UI
-bearer_scheme = HTTPBearer()
+bearer_scheme = HTTPBearer(auto_error=False)
 
 # --- Composition Root (Dependency Injection) ---
 
@@ -34,6 +42,12 @@ def get_user_repository(db: Session = Depends(get_db)) -> IUserRepository:
     return SQLAlchemyUserRepository(db)
 
 
+def get_auth_session_repository(
+    db: Session = Depends(get_db),
+) -> IAuthSessionRepository:
+    return SQLAlchemyAuthSessionRepository(db)
+
+
 def get_token_provider() -> ITokenProvider:
     return JWTTokenProvider(
         secret_key=settings.jwt_secret_key,
@@ -44,27 +58,136 @@ def get_token_provider() -> ITokenProvider:
 
 def get_auth_business_service(
     repo: IUserRepository = Depends(get_user_repository),
+    auth_session_repo: IAuthSessionRepository = Depends(get_auth_session_repository),
     token_provider: ITokenProvider = Depends(get_token_provider),
 ) -> AuthBusinessService:
-    return AuthBusinessService(repo, token_provider, admin_email=settings.admin_email)
+    return AuthBusinessService(
+        repo,
+        auth_session_repo,
+        token_provider,
+        access_token_expire_minutes=settings.jwt_access_token_expire_minutes,
+        refresh_token_expire_days=settings.auth_refresh_token_expire_days,
+        admin_email=settings.admin_email,
+    )
+
+
+def _set_auth_cookies(response: Response, auth_result: dict) -> None:
+    response.set_cookie(
+        key=settings.auth_access_cookie_name,
+        value=auth_result["access_token"],
+        httponly=True,
+        max_age=settings.jwt_access_token_expire_minutes * 60,
+        path="/",
+        samesite=settings.session_same_site,
+        secure=settings.session_https_only,
+    )
+    response.set_cookie(
+        key=settings.auth_refresh_cookie_name,
+        value=auth_result["refresh_token"],
+        httponly=True,
+        max_age=settings.auth_refresh_token_expire_days * 24 * 60 * 60,
+        path="/",
+        samesite=settings.session_same_site,
+        secure=settings.session_https_only,
+    )
+    response.set_cookie(
+        key=settings.auth_csrf_cookie_name,
+        value=auth_result["csrf_token"],
+        httponly=False,
+        max_age=settings.auth_refresh_token_expire_days * 24 * 60 * 60,
+        path="/",
+        samesite=settings.session_same_site,
+        secure=settings.session_https_only,
+    )
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    response.delete_cookie(
+        settings.auth_access_cookie_name,
+        path="/",
+        samesite=settings.session_same_site,
+        secure=settings.session_https_only,
+    )
+    response.delete_cookie(
+        settings.auth_refresh_cookie_name,
+        path="/",
+        samesite=settings.session_same_site,
+        secure=settings.session_https_only,
+    )
+    response.delete_cookie(
+        settings.auth_csrf_cookie_name,
+        path="/",
+        samesite=settings.session_same_site,
+        secure=settings.session_https_only,
+    )
+
+
+def require_csrf_for_cookie_auth(request: Request) -> None:
+    if request.method.upper() in {"GET", "HEAD", "OPTIONS"}:
+        return
+
+    if request.headers.get("Authorization"):
+        return
+
+    access_cookie = request.cookies.get(settings.auth_access_cookie_name)
+    refresh_cookie = request.cookies.get(settings.auth_refresh_cookie_name)
+    if access_cookie is None and refresh_cookie is None:
+        return
+
+    csrf_cookie = request.cookies.get(settings.auth_csrf_cookie_name)
+    csrf_header = request.headers.get("X-CSRF-Token")
+    if (
+        not csrf_cookie
+        or not csrf_header
+        or not secrets.compare_digest(csrf_cookie, csrf_header)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CSRF validation failed",
+        )
 
 
 # --- Dependencies for Protecting Endpoints ---
 
 
 def get_current_user(
-    token: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    request: Request,
+    token: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     repo: IUserRepository = Depends(get_user_repository),
+    auth_session_repo: IAuthSessionRepository = Depends(get_auth_session_repository),
     token_provider: ITokenProvider = Depends(get_token_provider),
 ) -> User:
-    email = token_provider.verify_token(token.credentials)
-    if not email:
+    raw_token = token.credentials if token is not None else None
+    if raw_token is None:
+        raw_token = request.cookies.get(settings.auth_access_cookie_name)
+
+    if raw_token is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    user = repo.get_by_email(email)
+
+    claims = token_provider.verify_access_token(raw_token)
+    if not claims:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if claims.session_id is not None:
+        auth_session = auth_session_repo.get_active_by_session_id(
+            claims.session_id, auth_service_now()
+        )
+        if auth_session is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    user = repo.get_by_email(claims.subject)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
@@ -77,11 +200,15 @@ def get_current_user(
 
 
 def get_admin_user(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.email != settings.admin_email:
+    if current_user.email.lower() != settings.admin_email.strip().lower():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required"
         )
     return current_user
+
+
+def auth_service_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 # --- Endpoints ---
@@ -117,15 +244,24 @@ async def auth_callback(
 
     # At this point, you have the user's email!
     try:
-        result = auth_service.process_google_user(user_info)
-        access_token = result["access_token"]
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/#access_token={access_token}"
+        result = auth_service.process_google_user(
+            user_info,
+            user_agent=request.headers.get("user-agent"),
+            ip_address=request.client.host if request.client is not None else None,
         )
+        response = RedirectResponse(url=settings.frontend_url)
+        _set_auth_cookies(response, result)
+        return response
     except PermissionError:
-        return RedirectResponse(url=f"{settings.frontend_url}/#error=inactive")
+        response = RedirectResponse(url=f"{settings.frontend_url}?auth_error=inactive")
+        _clear_auth_cookies(response)
+        return response
     except Exception:
-        return RedirectResponse(url=f"{settings.frontend_url}/#error=server_error")
+        response = RedirectResponse(
+            url=f"{settings.frontend_url}?auth_error=server_error"
+        )
+        _clear_auth_cookies(response)
+        return response
 
 
 @router.get("/me", response_model=UserMeRead)
@@ -138,13 +274,63 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
         picture=current_user.picture,
         provider=current_user.provider,
         is_active=current_user.is_active,
-        is_admin=current_user.email == settings.admin_email,
+        is_admin=current_user.email.lower() == settings.admin_email.strip().lower(),
     )
+
+
+@router.post("/refresh")
+async def refresh_auth_session(
+    request: Request,
+    _: None = Depends(require_csrf_for_cookie_auth),
+    auth_service: AuthBusinessService = Depends(get_auth_business_service),
+):
+    refresh_token = request.cookies.get(settings.auth_refresh_cookie_name)
+    if refresh_token is None:
+        response = JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": "Refresh token missing"},
+        )
+        _clear_auth_cookies(response)
+        return response
+
+    try:
+        result = auth_service.refresh_session(
+            refresh_token,
+            user_agent=request.headers.get("user-agent"),
+            ip_address=request.client.host if request.client is not None else None,
+        )
+    except PermissionError:
+        response = JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": "Refresh failed"},
+        )
+        _clear_auth_cookies(response)
+        return response
+
+    response = JSONResponse({"message": "Session refreshed"})
+    _set_auth_cookies(response, result)
+    return response
+
+
+@router.post("/logout")
+async def logout(
+    request: Request,
+    _: None = Depends(require_csrf_for_cookie_auth),
+    auth_service: AuthBusinessService = Depends(get_auth_business_service),
+):
+    refresh_token = request.cookies.get(settings.auth_refresh_cookie_name)
+    if refresh_token is not None:
+        auth_service.revoke_session(refresh_token)
+
+    response = JSONResponse({"message": "Logged out"})
+    _clear_auth_cookies(response)
+    return response
 
 
 @router.post("/activate")
 async def activate_user(
     email: str,
+    _: None = Depends(require_csrf_for_cookie_auth),
     admin_user: User = Depends(get_admin_user),
     auth_service: AuthBusinessService = Depends(get_auth_business_service),
 ):
@@ -159,6 +345,7 @@ async def activate_user(
 @router.post("/deactivate")
 async def deactivate_user(
     email: str,
+    _: None = Depends(require_csrf_for_cookie_auth),
     admin_user: User = Depends(get_admin_user),
     auth_service: AuthBusinessService = Depends(get_auth_business_service),
 ):
