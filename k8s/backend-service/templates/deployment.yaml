@@ -58,7 +58,10 @@ spec:
                   name: glitchtip-secret
                   key: GLITCHTIP_DSN
             - name: DATABASE_URL
-              value: {{ .Values.DATABASE_URL }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "backend-service.databaseSecretName" . }}
+                  key: {{ .Values.database.existingSecretKey }}
             - name: STORAGE_DIR
               value: /app/data
             {{- if .Values.observability.otel.enabled }}

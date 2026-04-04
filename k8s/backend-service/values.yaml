@@ -56,7 +56,15 @@ service:
   # This sets the ports more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#field-spec-ports
   port: 80
 
-DATABASE_URL: "sqlite:///./app.db"
+database:
+  url: "sqlite:///./app.db"
+  existingSecret: ""
+  existingSecretKey: "DATABASE_URL"
+
+migrations:
+  enabled: true
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
 
 observability:
   otel:

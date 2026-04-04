@@ -6,7 +6,7 @@ FastAPI service for managing plant data, enriched from Wikipedia and summarized 
 ## Features
 
 - FastAPI with built-in docs enabled at `/docs` and `/redoc`
-- SQLite database via SQLAlchemy 2.0 ORM (Declarative Mapping)
+- SQLAlchemy 2.0 ORM with SQLite for local development and PostgreSQL support for production
 - Pydantic v2 schemas for request/response validation
 - Plant CRUD and Wikipedia-driven plant creation
 - External data fetching via `curl_cffi` with browser impersonation
@@ -104,6 +104,7 @@ Settings are loaded from `.env` and `solid.env` (see [app/config.py](app/config.
 
 Key variables:
 - `DATABASE_URL` (default: `sqlite:///./app.db`)
+- For Kubernetes production, prefer storing `DATABASE_URL` in a Secret and pointing the chart at that secret.
 - `STORAGE_DIR` (default: `data/images` locally, should be `/app/data/images` in Docker/K8s to match volume mounts)
 - `GEM_API_KEY` (required for Gemini summarization)
 - `BROWSER` (default: `chrome`, for `curl_cffi` impersonation)
@@ -122,6 +123,65 @@ Create a migration:
 
 Apply migrations:
 - `uv run alembic upgrade head`
+
+## PostgreSQL deployment
+
+The backend still defaults to SQLite locally, but the production path is now PostgreSQL-first:
+
+- Startup schema creation only runs automatically for SQLite.
+- Kubernetes deployments should run Alembic migrations before the app starts.
+- The backend chart reads `DATABASE_URL` from a Kubernetes Secret.
+
+Recommended layout when reusing the PostgreSQL server from GlitchTip:
+
+- Reuse the same PostgreSQL server or cluster.
+- Create a separate database for this backend.
+- Create a separate backend database user.
+- Do not share GlitchTip's database schema with this app.
+
+Because CloudNativePG disables external superuser access by default, you can create the database and user by executing directly into the PostgreSQL primary pod:
+
+```bash
+# Execute into the primary pod to create the user and database
+kubectl exec -it glitchtip-solid-pg-1 -- psql -c "CREATE USER solid_backend WITH LOGIN PASSWORD 'change-me';"
+kubectl exec -it glitchtip-solid-pg-1 -- psql -c "CREATE DATABASE solid_backend OWNER solid_backend;"
+```
+
+Create a backend database secret:
+
+```bash
+kubectl create secret generic backend-db \
+	--from-literal=DATABASE_URL='postgresql+psycopg://solid_backend:change-me@postgres-host:5432/solid_backend'
+```
+
+> **Note**: Be sure to replace `change-me` with your actual password and `postgres-host` with your actual PostgreSQL service hostname (e.g., `glitchtip-postgresql.default.svc.cluster.local`).
+
+If you do not provide `database.existingSecret`, the chart creates its own secret from `database.url` in `values.yaml`. That is acceptable for local clusters, but not recommended for production because the database URL ends up in Helm-managed values.
+
+The chart now runs a pre-install and pre-upgrade migration Job using `alembic upgrade head`, so schema changes are applied before the backend deployment rolls forward.
+
+If the migration Job fails with `BackoffLimitExceeded`, check these first:
+
+- The secret value must use the SQLAlchemy psycopg URL form: `postgresql+psycopg://...`, not just `postgresql://...`.
+- Rebuild and reload the backend image after adding the PostgreSQL driver dependency:
+
+```bash
+docker build -t solid-backend:latest .
+kind load docker-image solid-backend:latest --name solid-cluster
+```
+
+- The backend database user must have permission to create and alter tables for Alembic migrations.
+- The secret must contain the key named `DATABASE_URL` unless you also override `database.existingSecretKey`.
+
+Useful commands:
+
+```bash
+kubectl logs job/backend-backend-service-migrate --all-containers=true
+kubectl describe job backend-backend-service-migrate
+kubectl get secret backend-db -o jsonpath='{.data.DATABASE_URL}' | base64 -d; echo
+```
+
+For GlitchTip on a small VPS, Valkey/Redis is optional. Current GlitchTip docs state that setting `VALKEY_URL` to an empty string makes GlitchTip use PostgreSQL for its task queue, cache, and sessions. This is best paired with GlitchTip all-in-one mode for small, low-traffic deployments. For Kubernetes or higher-throughput setups, keep Valkey enabled.
 
 Add traefik:
 ```bash

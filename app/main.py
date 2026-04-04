@@ -27,7 +27,8 @@ tracer_provider = configure_tracing()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    if settings.database_url.startswith("sqlite"):
+        Base.metadata.create_all(bind=engine)
     yield
     if tracer_provider is not None:
         tracer_provider.shutdown()

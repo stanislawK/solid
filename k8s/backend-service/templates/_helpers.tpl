@@ -60,3 +60,14 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Create the name of the secret that stores DATABASE_URL.
+*/}}
+{{- define "backend-service.databaseSecretName" -}}
+{{- if .Values.database.existingSecret }}
+{{- .Values.database.existingSecret }}
+{{- else }}
+{{- printf "%s-db" (include "backend-service.fullname" .) }}
+{{- end }}
+{{- end }}

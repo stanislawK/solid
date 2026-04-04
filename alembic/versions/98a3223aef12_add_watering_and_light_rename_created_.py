@@ -38,8 +38,12 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_plants_id"), "plants", ["id"], unique=False)
-    op.drop_index(op.f("ix_items_id"), table_name="items")
-    op.drop_table("items")
+
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if "items" in inspector.get_table_names():
+        op.drop_index(op.f("ix_items_id"), table_name="items")
+        op.drop_table("items")
     # ### end Alembic commands ###
 
 
