@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.services import (
     AuthProvider,
     GoogleAuthProvider,
@@ -38,12 +38,12 @@ def get_auth_provider() -> AuthProvider:
     )
 
 
-def get_user_repository(db: Session = Depends(get_db)) -> IUserRepository:
+def get_user_repository(db: AsyncSession = Depends(get_db)) -> IUserRepository:
     return SQLAlchemyUserRepository(db)
 
 
 def get_auth_session_repository(
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> IAuthSessionRepository:
     return SQLAlchemyAuthSessionRepository(db)
 
@@ -150,7 +150,7 @@ def require_csrf_for_cookie_auth(request: Request) -> None:
 # --- Dependencies for Protecting Endpoints ---
 
 
-def get_current_user(
+async def get_current_user(
     request: Request,
     token: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     repo: IUserRepository = Depends(get_user_repository),
@@ -177,7 +177,7 @@ def get_current_user(
         )
 
     if claims.session_id is not None:
-        auth_session = auth_session_repo.get_active_by_session_id(
+        auth_session = await auth_session_repo.get_active_by_session_id(
             claims.session_id, auth_service_now()
         )
         if auth_session is None:
@@ -187,7 +187,7 @@ def get_current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-    user = repo.get_by_email(claims.subject)
+    user = await repo.get_by_email(claims.subject)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
@@ -244,7 +244,7 @@ async def auth_callback(
 
     # At this point, you have the user's email!
     try:
-        result = auth_service.process_google_user(
+        result = await auth_service.process_google_user(
             user_info,
             user_agent=request.headers.get("user-agent"),
             ip_address=request.client.host if request.client is not None else None,
@@ -294,7 +294,7 @@ async def refresh_auth_session(
         return response
 
     try:
-        result = auth_service.refresh_session(
+        result = await auth_service.refresh_session(
             refresh_token,
             user_agent=request.headers.get("user-agent"),
             ip_address=request.client.host if request.client is not None else None,
@@ -320,7 +320,7 @@ async def logout(
 ):
     refresh_token = request.cookies.get(settings.auth_refresh_cookie_name)
     if refresh_token is not None:
-        auth_service.revoke_session(refresh_token)
+        await auth_service.revoke_session(refresh_token)
 
     response = JSONResponse({"message": "Logged out"})
     _clear_auth_cookies(response)
@@ -336,7 +336,7 @@ async def activate_user(
 ):
     """Admin-only endpoint to activate a user account."""
     try:
-        auth_service.activate_user(email)
+        await auth_service.activate_user(email)
         return {"message": f"User {email} activated successfully."}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
@@ -351,7 +351,7 @@ async def deactivate_user(
 ):
     """Admin-only endpoint to deactivate a user account."""
     try:
-        auth_service.deactivate_user(email)
+        await auth_service.deactivate_user(email)
         return {"message": f"User {email} deactivated successfully."}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -363,4 +363,4 @@ async def get_all_users(
     auth_service: AuthBusinessService = Depends(get_auth_business_service),
 ):
     """Admin-only endpoint to get list of all users and their status."""
-    return auth_service.get_all_users()
+    return await auth_service.get_all_users()

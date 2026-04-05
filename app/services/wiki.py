@@ -3,15 +3,16 @@ from __future__ import annotations
 from typing import Protocol, cast
 
 import curl_cffi
+from curl_cffi import requests
 
 from app.schemas.wiki import WikipediaSearch
 
 
 class WikipediaProvider(Protocol):
-    def search_articles(self, term: str) -> list[WikipediaSearch]: ...
-    def get_article(self, title: str) -> str: ...
-    def get_article_image_url(self, title: str) -> str | None: ...
-    def get_wikimedia_image_url(self, latin_name: str) -> str | None: ...
+    async def search_articles(self, term: str) -> list[WikipediaSearch]: ...
+    async def get_article(self, title: str) -> str: ...
+    async def get_article_image_url(self, title: str) -> str | None: ...
+    async def get_wikimedia_image_url(self, latin_name: str) -> str | None: ...
 
 
 class WikipediaService:
@@ -27,7 +28,7 @@ class WikipediaService:
         self.base_url = f"https://{language}.wikipedia.org/w/api.php"
         self.commons_base_url = "https://commons.wikimedia.org/w/api.php"
 
-    def search_articles(self, term: str) -> list[WikipediaSearch]:
+    async def search_articles(self, term: str) -> list[WikipediaSearch]:
         params = {
             "action": "query",
             "generator": "search",
@@ -42,39 +43,40 @@ class WikipediaService:
             "formatversion": 2,
         }
         try:
-            response = curl_cffi.get(
-                self.base_url,
-                params=params,
-                impersonate=cast(curl_cffi.requests.BrowserTypeLiteral, self.browser),
-            )
-            response.raise_for_status()
-            data = response.json()
-            pages = data.get("query", {}).get("pages", [])
-            results = []
-            for page in pages:
-                title = page.get("title", "")
+            async with requests.AsyncSession(
+                impersonate=cast(curl_cffi.requests.BrowserTypeLiteral, self.browser)
+            ) as session:
+                response = await session.get(self.base_url, params=params)
+                response.raise_for_status()
+                data = response.json()
+                pages = data.get("query", {}).get("pages", [])
+                results = []
+                for page in pages:
+                    title = page.get("title", "")
 
-                snippet = ""
-                if (terms := page.get("terms")) and (
-                    descriptions := terms.get("description")
-                ):
-                    snippet = descriptions[0]
+                    snippet = ""
+                    if (terms := page.get("terms")) and (
+                        descriptions := terms.get("description")
+                    ):
+                        snippet = descriptions[0]
 
-                thumbnail_source = None
-                if thumbnail_info := page.get("thumbnail"):
-                    thumbnail_source = thumbnail_info.get("source")
+                    thumbnail_source = None
+                    if thumbnail_info := page.get("thumbnail"):
+                        thumbnail_source = thumbnail_info.get("source")
 
-                results.append(
-                    WikipediaSearch(
-                        title=title, snippet=snippet, thumbnail=thumbnail_source
+                    results.append(
+                        WikipediaSearch(
+                            title=title,
+                            snippet=snippet,
+                            thumbnail=thumbnail_source,
+                        )
                     )
-                )
-            return results
+                return results
         except Exception as e:
             print(f"Error fetching Wikipedia articles: {e}")
             return []
 
-    def get_article(self, title: str) -> str:
+    async def get_article(self, title: str) -> str:
         params = {
             "action": "query",
             "prop": "extracts",
@@ -84,23 +86,22 @@ class WikipediaService:
         }
 
         try:
-            response = curl_cffi.get(
-                self.base_url,
-                params=params,
-                impersonate=cast(curl_cffi.requests.BrowserTypeLiteral, self.browser),
-            )
-            response.raise_for_status()
-            data = response.json()
-            pages = data.get("query", {}).get("pages", {})
-            if not pages:
-                return ""
-            page = next(iter(pages.values()))
-            return page.get("extract", "")
+            async with requests.AsyncSession(
+                impersonate=cast(curl_cffi.requests.BrowserTypeLiteral, self.browser)
+            ) as session:
+                response = await session.get(self.base_url, params=params)
+                response.raise_for_status()
+                data = response.json()
+                pages = data.get("query", {}).get("pages", {})
+                if not pages:
+                    return ""
+                page = next(iter(pages.values()))
+                return page.get("extract", "")
         except Exception as e:
             print(f"Error fetching Wikipedia article: {e}")
             return ""
 
-    def get_article_image_url(self, title: str) -> str | None:
+    async def get_article_image_url(self, title: str) -> str | None:
         params = {
             "action": "query",
             "prop": "pageimages",
@@ -109,23 +110,22 @@ class WikipediaService:
             "pithumbsize": 500,
         }
         try:
-            response = curl_cffi.get(
-                self.base_url,
-                params=params,
-                impersonate=cast(curl_cffi.requests.BrowserTypeLiteral, self.browser),
-            )
-            response.raise_for_status()
-            data = response.json()
-            pages = data.get("query", {}).get("pages", {})
-            if not pages:
-                return None
-            page = next(iter(pages.values()))
-            return page.get("thumbnail", {}).get("source")
+            async with requests.AsyncSession(
+                impersonate=cast(curl_cffi.requests.BrowserTypeLiteral, self.browser)
+            ) as session:
+                response = await session.get(self.base_url, params=params)
+                response.raise_for_status()
+                data = response.json()
+                pages = data.get("query", {}).get("pages", {})
+                if not pages:
+                    return None
+                page = next(iter(pages.values()))
+                return page.get("thumbnail", {}).get("source")
         except Exception as e:
             print(f"Error fetching Wikipedia image URL: {e}")
             return None
 
-    def get_wikimedia_image_url(self, latin_name: str) -> str | None:
+    async def get_wikimedia_image_url(self, latin_name: str) -> str | None:
         if not latin_name.strip():
             return None
 
@@ -146,23 +146,22 @@ class WikipediaService:
                 "iiprop": "url",
             }
             try:
-                response = curl_cffi.get(
-                    self.commons_base_url,
-                    params=params,
+                async with requests.AsyncSession(
                     impersonate=cast(
                         curl_cffi.requests.BrowserTypeLiteral, self.browser
-                    ),
-                )
-                response.raise_for_status()
-                data = response.json()
-                pages = data.get("query", {}).get("pages", {})
-                if not pages:
-                    continue
+                    )
+                ) as session:
+                    response = await session.get(self.commons_base_url, params=params)
+                    response.raise_for_status()
+                    data = response.json()
+                    pages = data.get("query", {}).get("pages", {})
+                    if not pages:
+                        continue
 
-                page = next(iter(pages.values()))
-                image_info = page.get("imageinfo", [])
-                if image_info:
-                    return image_info[0].get("url")
+                    page = next(iter(pages.values()))
+                    image_info = page.get("imageinfo", [])
+                    if image_info:
+                        return image_info[0].get("url")
             except Exception as e:
                 print(f"Error fetching Wikimedia image URL: {e}")
                 return None

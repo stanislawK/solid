@@ -28,7 +28,8 @@ tracer_provider = configure_tracing()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     if settings.database_url.startswith("sqlite"):
-        Base.metadata.create_all(bind=engine)
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
     yield
     if tracer_provider is not None:
         tracer_provider.shutdown()
@@ -63,4 +64,7 @@ app.mount("/images", StaticFiles(directory=settings.storage_dir), name="images")
 # This will automatically capture HTTP metrics and traces
 if tracer_provider is not None:
     FastAPIInstrumentor.instrument_app(app, tracer_provider=tracer_provider)
-    SQLAlchemyInstrumentor().instrument(engine=engine, tracer_provider=tracer_provider)
+    SQLAlchemyInstrumentor().instrument(
+        engine=engine.sync_engine,
+        tracer_provider=tracer_provider,
+    )

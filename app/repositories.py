@@ -1,10 +1,13 @@
 from datetime import datetime
-from sqlalchemy.orm import Session
-from .models import AuthSession, Plant, User
 from abc import ABC, abstractmethod
 from typing import Protocol
 import os
 import uuid
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .models import AuthSession, Plant, User
 
 
 class ImageStorageProtocol(Protocol):
@@ -49,78 +52,76 @@ Why do we do this? Because now, for your Unit Tests, you can create a FakeTestRe
 
 class IPlantRepository(ABC):
     @abstractmethod
-    def save(self, plant: Plant) -> Plant:
+    async def save(self, plant: Plant) -> Plant:
         pass
 
     @abstractmethod
-    def get_by_id(self, plant_id: int) -> Plant | None:
+    async def get_by_id(self, plant_id: int) -> Plant | None:
         pass
 
     @abstractmethod
-    def get_all_by_user_id(self, user_id: int) -> list[Plant]:
+    async def get_all_by_user_id(self, user_id: int) -> list[Plant]:
         pass
 
     @abstractmethod
-    def get_by_id_and_user_id(self, plant_id: int, user_id: int) -> Plant | None:
+    async def get_by_id_and_user_id(self, plant_id: int, user_id: int) -> Plant | None:
         pass
 
     @abstractmethod
-    def delete(self, plant: Plant) -> None:
+    async def delete(self, plant: Plant) -> None:
         pass
 
 
 class SQLAlchemyPlantRepository(IPlantRepository):
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def save(self, plant: Plant) -> Plant:
+    async def save(self, plant: Plant) -> Plant:
         self.db.add(plant)
-        self.db.commit()
-        self.db.refresh(plant)
+        await self.db.commit()
+        await self.db.refresh(plant)
         return plant
 
-    def get_by_id(self, plant_id: int) -> Plant | None:
-        return self.db.query(Plant).filter(Plant.id == plant_id).first()
+    async def get_by_id(self, plant_id: int) -> Plant | None:
+        result = await self.db.execute(select(Plant).where(Plant.id == plant_id))
+        return result.scalars().first()
 
-    def get_all_by_user_id(self, user_id: int) -> list[Plant]:
-        return (
-            self.db.query(Plant)
-            .filter(Plant.user_id == user_id)
-            .order_by(Plant.id)
-            .all()
+    async def get_all_by_user_id(self, user_id: int) -> list[Plant]:
+        result = await self.db.execute(
+            select(Plant).where(Plant.user_id == user_id).order_by(Plant.id)
         )
+        return list(result.scalars().all())
 
-    def get_by_id_and_user_id(self, plant_id: int, user_id: int) -> Plant | None:
-        return (
-            self.db.query(Plant)
-            .filter(Plant.id == plant_id, Plant.user_id == user_id)
-            .first()
+    async def get_by_id_and_user_id(self, plant_id: int, user_id: int) -> Plant | None:
+        result = await self.db.execute(
+            select(Plant).where(Plant.id == plant_id, Plant.user_id == user_id)
         )
+        return result.scalars().first()
 
-    def delete(self, plant: Plant) -> None:
-        self.db.delete(plant)
-        self.db.commit()
+    async def delete(self, plant: Plant) -> None:
+        await self.db.delete(plant)
+        await self.db.commit()
 
 
 class IAuthSessionRepository(ABC):
     @abstractmethod
-    def create(self, auth_session: AuthSession) -> AuthSession:
+    async def create(self, auth_session: AuthSession) -> AuthSession:
         pass
 
     @abstractmethod
-    def get_active_by_refresh_token_hash(
+    async def get_active_by_refresh_token_hash(
         self, refresh_token_hash: str, now: datetime
     ) -> AuthSession | None:
         pass
 
     @abstractmethod
-    def get_active_by_session_id(
+    async def get_active_by_session_id(
         self, session_id: str, now: datetime
     ) -> AuthSession | None:
         pass
 
     @abstractmethod
-    def rotate(
+    async def rotate(
         self,
         auth_session: AuthSession,
         refresh_token_hash: str,
@@ -132,99 +133,102 @@ class IAuthSessionRepository(ABC):
         pass
 
     @abstractmethod
-    def revoke(self, auth_session: AuthSession, revoked_at: datetime) -> AuthSession:
+    async def revoke(
+        self, auth_session: AuthSession, revoked_at: datetime
+    ) -> AuthSession:
         pass
 
     @abstractmethod
-    def revoke_all_for_user(self, user_id: int, revoked_at: datetime) -> None:
+    async def revoke_all_for_user(self, user_id: int, revoked_at: datetime) -> None:
         pass
 
 
 class IUserRepository(ABC):
     @abstractmethod
-    def get_by_email(self, email: str) -> User | None:
+    async def get_by_email(self, email: str) -> User | None:
         pass
 
     @abstractmethod
-    def get_by_id(self, user_id: int) -> User | None:
+    async def get_by_id(self, user_id: int) -> User | None:
         pass
 
     @abstractmethod
-    def create(self, user: User) -> User:
+    async def create(self, user: User) -> User:
         pass
 
     @abstractmethod
-    def update(self, user: User) -> User:
+    async def update(self, user: User) -> User:
         pass
 
     @abstractmethod
-    def get_all(self) -> list[User]:
+    async def get_all(self) -> list[User]:
         pass
 
 
 class SQLAlchemyUserRepository(IUserRepository):
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def get_by_email(self, email: str) -> User | None:
-        return self.db.query(User).filter(User.email == email).first()
+    async def get_by_email(self, email: str) -> User | None:
+        result = await self.db.execute(select(User).where(User.email == email))
+        return result.scalars().first()
 
-    def get_by_id(self, user_id: int) -> User | None:
-        return self.db.query(User).filter(User.id == user_id).first()
+    async def get_by_id(self, user_id: int) -> User | None:
+        result = await self.db.execute(select(User).where(User.id == user_id))
+        return result.scalars().first()
 
-    def create(self, user: User) -> User:
+    async def create(self, user: User) -> User:
         self.db.add(user)
-        self.db.commit()
-        self.db.refresh(user)
+        await self.db.commit()
+        await self.db.refresh(user)
         return user
 
-    def update(self, user: User) -> User:
+    async def update(self, user: User) -> User:
         self.db.add(user)
-        self.db.commit()
-        self.db.refresh(user)
+        await self.db.commit()
+        await self.db.refresh(user)
         return user
 
-    def get_all(self) -> list[User]:
-        return self.db.query(User).all()
+    async def get_all(self) -> list[User]:
+        result = await self.db.execute(select(User).order_by(User.id))
+        return list(result.scalars().all())
 
 
 class SQLAlchemyAuthSessionRepository(IAuthSessionRepository):
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def create(self, auth_session: AuthSession) -> AuthSession:
+    async def create(self, auth_session: AuthSession) -> AuthSession:
         self.db.add(auth_session)
-        self.db.commit()
-        self.db.refresh(auth_session)
+        await self.db.commit()
+        await self.db.refresh(auth_session)
         return auth_session
 
-    def get_active_by_refresh_token_hash(
+    async def get_active_by_refresh_token_hash(
         self, refresh_token_hash: str, now: datetime
     ) -> AuthSession | None:
-        return (
-            self.db.query(AuthSession)
-            .filter(
+        result = await self.db.execute(
+            select(AuthSession).where(
                 AuthSession.refresh_token_hash == refresh_token_hash,
                 AuthSession.revoked_at.is_(None),
                 AuthSession.expires_at > now,
             )
-            .first()
         )
+        return result.scalars().first()
 
-    def get_active_by_session_id(
+    async def get_active_by_session_id(
         self, session_id: str, now: datetime
     ) -> AuthSession | None:
-        return (
-            self.db.query(AuthSession)
-            .filter(
+        result = await self.db.execute(
+            select(AuthSession).where(
                 AuthSession.session_id == session_id,
                 AuthSession.revoked_at.is_(None),
                 AuthSession.expires_at > now,
             )
-            .first()
         )
+        return result.scalars().first()
 
-    def rotate(
+    async def rotate(
         self,
         auth_session: AuthSession,
         refresh_token_hash: str,
@@ -239,21 +243,23 @@ class SQLAlchemyAuthSessionRepository(IAuthSessionRepository):
         auth_session.user_agent = user_agent
         auth_session.ip_address = ip_address
         self.db.add(auth_session)
-        self.db.commit()
-        self.db.refresh(auth_session)
+        await self.db.commit()
+        await self.db.refresh(auth_session)
         return auth_session
 
-    def revoke(self, auth_session: AuthSession, revoked_at: datetime) -> AuthSession:
+    async def revoke(
+        self, auth_session: AuthSession, revoked_at: datetime
+    ) -> AuthSession:
         auth_session.revoked_at = revoked_at
         self.db.add(auth_session)
-        self.db.commit()
-        self.db.refresh(auth_session)
+        await self.db.commit()
+        await self.db.refresh(auth_session)
         return auth_session
 
-    def revoke_all_for_user(self, user_id: int, revoked_at: datetime) -> None:
-        (
-            self.db.query(AuthSession)
-            .filter(AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None))
-            .update({AuthSession.revoked_at: revoked_at}, synchronize_session=False)
+    async def revoke_all_for_user(self, user_id: int, revoked_at: datetime) -> None:
+        await self.db.execute(
+            update(AuthSession)
+            .where(AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None))
+            .values(revoked_at=revoked_at)
         )
-        self.db.commit()
+        await self.db.commit()

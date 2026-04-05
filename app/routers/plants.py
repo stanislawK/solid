@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.models import User
@@ -36,7 +36,7 @@ router = APIRouter(
 # --- Composition Root (Dependency Injection) ---
 
 
-def get_plant_service(db: Session = Depends(get_db)) -> PlantService:
+def get_plant_service(db: AsyncSession = Depends(get_db)) -> PlantService:
     """
     This is the only place that knows about 'Concrete' classes.
     It assembles the 'Lego blocks' for the rest of the app.
@@ -81,7 +81,7 @@ async def create_plant_from_wikipedia(
     """
     try:
         # The Router only orchestrates the call and handles HTTP specifics (errors/status)
-        plant = service.create_from_wiki(
+        plant = await service.create_from_wiki(
             request.article_title,
             current_user.id,
             preferred_image_url=request.preferred_image_url,
@@ -108,7 +108,7 @@ async def create_plant_from_name_ai(
     Endpoint to trigger the pure LLM fallback flow from a plant name.
     """
     try:
-        plant = service.create_from_name_ai(
+        plant = await service.create_from_name_ai(
             request.plant_name,
             current_user.id,
             preferred_image_url=request.preferred_image_url,
@@ -149,7 +149,7 @@ async def identify_and_store_plant_image(
     mime_type = file.content_type or "image/jpeg"
 
     try:
-        response = service.identify_from_image(
+        response = await service.identify_from_image(
             file_bytes=image_bytes,
             filename=file.filename,
             mime_type=mime_type,
@@ -168,7 +168,7 @@ async def identify_and_store_plant_image(
 
 
 @router.post("/", response_model=PlantRead, status_code=status.HTTP_201_CREATED)
-def create_plant_manually(
+async def create_plant_manually(
     payload: PlantCreate,
     service: Annotated[PlantService, Depends(get_plant_service)],
     current_user: Annotated[User, Depends(get_current_user)],
@@ -176,26 +176,26 @@ def create_plant_manually(
     """
     Classic manual creation (SRP: Reuse the same service logic).
     """
-    plant = service.create_manual(payload, current_user.id)
+    plant = await service.create_manual(payload, current_user.id)
     return PlantRead.model_validate(plant)
 
 
 @router.get("", response_model=list[PlantRead])
-def list_plants(
+async def list_plants(
     service: Annotated[PlantService, Depends(get_plant_service)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> list[PlantRead]:
-    plants = service.get_all_for_user(current_user.id)
+    plants = await service.get_all_for_user(current_user.id)
     return [PlantRead.model_validate(p) for p in plants]
 
 
 @router.get("/{plant_id}", response_model=PlantRead)
-def get_plant(
+async def get_plant(
     plant_id: int,
     service: Annotated[PlantService, Depends(get_plant_service)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> PlantRead:
-    plant = service.get_one_for_user(plant_id, current_user.id)
+    plant = await service.get_one_for_user(plant_id, current_user.id)
     if plant is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Plant not found"
@@ -204,14 +204,14 @@ def get_plant(
 
 
 @router.patch("/{plant_id}", response_model=PlantRead)
-def update_plant(
+async def update_plant(
     plant_id: int,
     payload: PlantUpdate,
     service: Annotated[PlantService, Depends(get_plant_service)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> PlantRead:
     try:
-        plant = service.update_plant(plant_id, current_user.id, payload)
+        plant = await service.update_plant(plant_id, current_user.id, payload)
         return PlantRead.model_validate(plant)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
@@ -229,7 +229,7 @@ async def update_plant_image(
 
     image_bytes = await file.read()
     try:
-        plant = service.update_plant_image(
+        plant = await service.update_plant_image(
             plant_id, current_user.id, image_bytes, file.filename
         )
         return PlantRead.model_validate(plant)
@@ -240,14 +240,14 @@ async def update_plant_image(
 
 
 @router.put("/{plant_id}/image/from-url", response_model=PlantRead)
-def update_plant_image_from_url(
+async def update_plant_image_from_url(
     plant_id: int,
     payload: PlantImageUrlUpdate,
     service: Annotated[PlantService, Depends(get_plant_service)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> PlantRead:
     try:
-        plant = service.update_plant_image_from_url(
+        plant = await service.update_plant_image_from_url(
             plant_id, current_user.id, payload.image_url
         )
         return PlantRead.model_validate(plant)
@@ -263,12 +263,12 @@ def update_plant_image_from_url(
 
 
 @router.delete("/{plant_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_plant(
+async def delete_plant(
     plant_id: int,
     service: Annotated[PlantService, Depends(get_plant_service)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     try:
-        service.delete_plant(plant_id, current_user.id)
+        await service.delete_plant(plant_id, current_user.id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

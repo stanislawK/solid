@@ -1,7 +1,7 @@
-from typing import Generator
+from collections.abc import AsyncGenerator
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
 
@@ -10,21 +10,29 @@ class Base(DeclarativeBase):
     pass
 
 
-engine = create_engine(
-    settings.database_url,
+# Ensure we use an async driver in the URL
+async_db_url = settings.database_url
+if async_db_url.startswith("postgresql://"):
+    async_db_url = async_db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+# For sqlite (if used locally) this would require aiosqlite, keeping string replacement as a fallback
+elif async_db_url.startswith("sqlite:///"):
+    async_db_url = async_db_url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
+
+engine = create_async_engine(
+    async_db_url,
     connect_args={"check_same_thread": False}
-    if settings.database_url.startswith("sqlite")
+    if async_db_url.startswith("sqlite")
     else {},
 )
 
-SessionLocal = sessionmaker(
-    bind=engine, autoflush=False, autocommit=False, expire_on_commit=False
+AsyncSessionLocal = async_sessionmaker(
+    bind=engine,
+    autoflush=False,
+    expire_on_commit=False,
+    class_=AsyncSession,
 )
 
 
-def get_db() -> Generator[Session, None, None]:
-    db = SessionLocal()
-    try:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    async with AsyncSessionLocal() as db:
         yield db
-    finally:
-        db.close()

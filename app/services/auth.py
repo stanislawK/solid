@@ -147,7 +147,7 @@ class AuthBusinessService:
     def _utcnow() -> datetime:
         return datetime.now(timezone.utc)
 
-    def _create_session_tokens(
+    async def _create_session_tokens(
         self,
         user_email: str,
         user_id: int,
@@ -167,7 +167,7 @@ class AuthBusinessService:
             user_agent=user_agent,
             ip_address=ip_address,
         )
-        self.auth_session_repo.create(auth_session)
+        await self.auth_session_repo.create(auth_session)
         return AuthSessionTokens(
             access_token=self.token_provider.create_access_token(
                 user_email, session_id
@@ -176,7 +176,7 @@ class AuthBusinessService:
             csrf_token=self.token_provider.generate_csrf_token(),
         )
 
-    def process_google_user(
+    async def process_google_user(
         self,
         user_info: AuthUserInfo,
         user_agent: str | None,
@@ -188,7 +188,7 @@ class AuthBusinessService:
             raise ValueError("No email found in user_info")
 
         normalized_email = user_info.email.strip().lower()
-        user = self.user_repo.get_by_email(normalized_email)
+        user = await self.user_repo.get_by_email(normalized_email)
         is_admin = bool(self.admin_email and normalized_email == self.admin_email)
 
         if not user:
@@ -199,12 +199,12 @@ class AuthBusinessService:
                 provider=user_info.provider or "google",
                 is_active=is_admin,
             )
-            user = self.user_repo.create(new_user)
+            user = await self.user_repo.create(new_user)
 
         if not user.is_active:
             raise PermissionError("User is inactive")
 
-        tokens = self._create_session_tokens(
+        tokens = await self._create_session_tokens(
             user.email,
             user.id,
             user_agent=user_agent,
@@ -218,26 +218,26 @@ class AuthBusinessService:
             "user": {"email": user.email},
         }
 
-    def refresh_session(
+    async def refresh_session(
         self,
         refresh_token: str,
         user_agent: str | None,
         ip_address: str | None,
     ) -> dict:
         now = self._utcnow()
-        auth_session = self.auth_session_repo.get_active_by_refresh_token_hash(
+        auth_session = await self.auth_session_repo.get_active_by_refresh_token_hash(
             self.token_provider.hash_refresh_token(refresh_token), now
         )
         if auth_session is None:
             raise PermissionError("Session refresh denied")
 
-        user = self.user_repo.get_by_id(auth_session.user_id)
+        user = await self.user_repo.get_by_id(auth_session.user_id)
         if user is None or not user.is_active:
-            self.auth_session_repo.revoke(auth_session, now)
+            await self.auth_session_repo.revoke(auth_session, now)
             raise PermissionError("Session refresh denied")
 
         new_refresh_token = self.token_provider.generate_refresh_token()
-        self.auth_session_repo.rotate(
+        await self.auth_session_repo.rotate(
             auth_session,
             refresh_token_hash=self.token_provider.hash_refresh_token(
                 new_refresh_token
@@ -258,26 +258,26 @@ class AuthBusinessService:
             "user": {"email": user.email},
         }
 
-    def revoke_session(self, refresh_token: str) -> None:
+    async def revoke_session(self, refresh_token: str) -> None:
         now = self._utcnow()
-        auth_session = self.auth_session_repo.get_active_by_refresh_token_hash(
+        auth_session = await self.auth_session_repo.get_active_by_refresh_token_hash(
             self.token_provider.hash_refresh_token(refresh_token), now
         )
         if auth_session is None:
             return
-        self.auth_session_repo.revoke(auth_session, now)
+        await self.auth_session_repo.revoke(auth_session, now)
 
-    def activate_user(self, user_email: str) -> bool:
-        user = self.user_repo.get_by_email(user_email)
+    async def activate_user(self, user_email: str) -> bool:
+        user = await self.user_repo.get_by_email(user_email)
         if not user:
             raise ValueError(f"User {user_email} not found.")
 
         user.is_active = True
-        self.user_repo.update(user)
+        await self.user_repo.update(user)
         return True
 
-    def deactivate_user(self, user_email: str) -> bool:
-        user = self.user_repo.get_by_email(user_email)
+    async def deactivate_user(self, user_email: str) -> bool:
+        user = await self.user_repo.get_by_email(user_email)
         if not user:
             raise ValueError(f"User {user_email} not found.")
 
@@ -285,9 +285,9 @@ class AuthBusinessService:
             raise ValueError("Cannot deactivate the admin user.")
 
         user.is_active = False
-        self.user_repo.update(user)
-        self.auth_session_repo.revoke_all_for_user(user.id, self._utcnow())
+        await self.user_repo.update(user)
+        await self.auth_session_repo.revoke_all_for_user(user.id, self._utcnow())
         return True
 
-    def get_all_users(self) -> list:
-        return self.user_repo.get_all()
+    async def get_all_users(self) -> list:
+        return await self.user_repo.get_all()

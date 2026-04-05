@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from fastapi.concurrency import run_in_threadpool
 from google import genai
 
 from app.schemas.plants import PlantCreate
@@ -9,20 +10,22 @@ from app.schemas.plants_ai import AiPlantProposals
 
 
 class IPlantIdentifier(Protocol):
-    def identify_plant(
+    async def identify_plant(
         self, image_bytes: bytes, mime_type: str
     ) -> AiPlantProposals: ...
 
 
 class IPlantSummarizer(Protocol):
-    def summarize_plant_data(self, raw_text: str, article_title: str) -> PlantCreate:
+    async def summarize_plant_data(
+        self, raw_text: str, article_title: str
+    ) -> PlantCreate:
         """
         Takes raw text and returns a PlantCreate object with the fields: 'name', 'latin_name',
         'description', 'watering', and 'light'.
         """
         ...
 
-    def generate_plant_data_from_name(self, plant_name: str) -> PlantCreate:
+    async def generate_plant_data_from_name(self, plant_name: str) -> PlantCreate:
         """
         Takes a plant name and generates a PlantCreate object.
         """
@@ -34,7 +37,7 @@ class GeminiPlantSummarizer:
         self.client = genai.Client(api_key=api_key)
         self.model = model
 
-    def summarize_plant_data(self, raw_text: str, article_title: str) -> PlantCreate:
+    def _summarize_plant_data(self, raw_text: str, article_title: str) -> PlantCreate:
         prompt = f"""
         Based on the following Wikipedia text, extract or infer the following:
         1. General description in polish (5-10 sentences)
@@ -58,7 +61,16 @@ class GeminiPlantSummarizer:
             raise ValueError("Gemini response text is None")
         return PlantCreate.model_validate_json(response.text)
 
-    def generate_plant_data_from_name(self, plant_name: str) -> PlantCreate:
+    async def summarize_plant_data(
+        self, raw_text: str, article_title: str
+    ) -> PlantCreate:
+        return await run_in_threadpool(
+            self._summarize_plant_data,
+            raw_text,
+            article_title,
+        )
+
+    def _generate_plant_data_from_name(self, plant_name: str) -> PlantCreate:
         system_instruction = (
             "You are a strict botanical expert. You must only provide data for indoor houseplants. "
             "Write the description strictly in Polish (5-10 sentences). "
@@ -91,13 +103,16 @@ class GeminiPlantSummarizer:
             )
         return result
 
+    async def generate_plant_data_from_name(self, plant_name: str) -> PlantCreate:
+        return await run_in_threadpool(self._generate_plant_data_from_name, plant_name)
+
 
 class GeminiPlantIdentifier(IPlantIdentifier):
     def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
         self.client = genai.Client(api_key=api_key)
         self.model = model
 
-    def identify_plant(self, image_bytes: bytes, mime_type: str) -> AiPlantProposals:
+    def _identify_plant(self, image_bytes: bytes, mime_type: str) -> AiPlantProposals:
         prompt = """
         You are an expert botanist and horticulturist. Your task is to accurately identify the plant in the provided image.
         Focus on recognizable features like leaf shape, venation, color patterns, and plant structure.
@@ -118,3 +133,8 @@ class GeminiPlantIdentifier(IPlantIdentifier):
         if response.text is None:
             raise ValueError("Gemini response text is None")
         return AiPlantProposals.model_validate_json(response.text)
+
+    async def identify_plant(
+        self, image_bytes: bytes, mime_type: str
+    ) -> AiPlantProposals:
+        return await run_in_threadpool(self._identify_plant, image_bytes, mime_type)

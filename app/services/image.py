@@ -4,11 +4,12 @@ from io import BytesIO
 from typing import Protocol, cast
 
 import curl_cffi
+from curl_cffi import requests
 from PIL import Image, UnidentifiedImageError
 
 
 class ImageDownloaderProtocol(Protocol):
-    def download_image(self, url: str) -> bytes: ...
+    async def download_image(self, url: str) -> bytes: ...
 
 
 class ImageValidatorProtocol(Protocol):
@@ -23,13 +24,13 @@ class CurlImageDownloader(ImageDownloaderProtocol):
     def __init__(self, browser: curl_cffi.requests.BrowserTypeLiteral):
         self.browser = browser
 
-    def download_image(self, url: str) -> bytes:
-        response = curl_cffi.get(
-            url,
-            impersonate=cast(curl_cffi.requests.BrowserTypeLiteral, self.browser),
-        )
-        response.raise_for_status()
-        return response.content
+    async def download_image(self, url: str) -> bytes:
+        async with requests.AsyncSession(
+            impersonate=cast(curl_cffi.requests.BrowserTypeLiteral, self.browser)
+        ) as session:
+            response = await session.get(url)
+            response.raise_for_status()
+            return response.content
 
 
 class PillowImageValidator(ImageValidatorProtocol):

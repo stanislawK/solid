@@ -17,7 +17,7 @@ async def get_wikipedia_articles(
     search_term: Annotated[str, Query(description="The term to search for")],
     service: Annotated[WikipediaProvider, Depends(get_wiki_service)],
 ):
-    titles = service.search_articles(search_term)
+    titles = await service.search_articles(search_term)
     return WikipediaResponse(search_term=search_term, results=titles)
 
 
@@ -32,5 +32,5 @@ async def get_wikimedia_image(
     ],
     service: Annotated[WikipediaProvider, Depends(get_wiki_service)],
 ) -> WikimediaImageResponse:
-    image_url = service.get_wikimedia_image_url(latin_name)
+    image_url = await service.get_wikimedia_image_url(latin_name)
     return WikimediaImageResponse(latin_name=latin_name, image_url=image_url)
