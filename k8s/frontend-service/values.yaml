@@ -12,5 +12,7 @@ service:
 ingress:
   enabled: true
   className: traefik-solid
-  # Optional: specify a host or leave empty for wildcard
-  host: ""
+  host: localhost
+  tls:
+    enabled: false
+    secretName: ""

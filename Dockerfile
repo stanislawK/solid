@@ -13,7 +13,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 FROM python:3.14-slim-bookworm
 WORKDIR /app
 COPY --from=builder /app /app
+RUN useradd --create-home --uid 1000 --shell /usr/sbin/nologin appuser \
+    && chown -R appuser:appuser /app
 # Place uv-created venv on PATH
 ENV PATH="/app/.venv/bin:$PATH"
+USER appuser
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

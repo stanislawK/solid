@@ -2,8 +2,24 @@ apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: api-stripprefix
-  namespace: default
+  namespace: {{ .Release.Namespace }}
 spec:
   stripPrefix:
     prefixes:
       - /api
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: api-security-headers
+  namespace: {{ .Release.Namespace }}
+spec:
+  headers:
+    frameDeny: true
+    contentTypeNosniff: true
+    browserXssFilter: true
+    referrerPolicy: strict-origin-when-cross-origin
+    permissionsPolicy: camera=(), geolocation=(), microphone=()
+    customResponseHeaders:
+      Cross-Origin-Opener-Policy: same-origin
+      Cross-Origin-Resource-Policy: same-origin

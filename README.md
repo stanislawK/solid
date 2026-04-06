@@ -86,8 +86,31 @@ Install or upgrade the backend chart:
 Install or upgrade the frontend chart:
 - `helm upgrade --install frontend ./k8s/frontend-service`
 
-Access the UI at: `http://localhost/` (Routed by Traefik)
-Backend API at: `http://localhost/api/` (Routed to the API by Traefik)
+Access the UI at: `http://localhost:8080/` after running `make expose-backend`
+Backend API at: `http://localhost:8080/api/` through the same Traefik port-forward
+
+## Production security baseline
+
+For production, deploy the frontend and backend on the same hostname, with the frontend on `/` and the backend on `/api`. This keeps browser traffic same-origin and avoids needing broad cross-origin access.
+
+Recommended production settings:
+
+- Set `ENVIRONMENT=production`
+- Set `FRONTEND_URL=https://your-domain.example`
+- Set `GCP_REDIRECT_URI=https://your-domain.example/api/auth/callback`
+- Set `ALLOWED_HOSTS=your-domain.example`
+- Set `CORS_ALLOWED_ORIGINS=https://your-domain.example`
+- Set `SESSION_HTTPS_ONLY=true`
+- Set `DOCS_ENABLED=false`
+- Set strong `JWT_SECRET_KEY` and `SESSION_SECRET_KEY` values through Kubernetes Secrets
+- Configure Traefik ingress TLS and bind both frontend and backend ingresses to the same host
+
+Notes:
+
+- Keep `SESSION_SAME_SITE=lax` unless you have verified that stricter settings do not break the Google OAuth callback flow.
+- The backend cannot be made callable only by frontend code in a browser environment. The realistic goal is same-origin routing, strict cookies, CSRF protection, host validation, and HTTPS-only transport.
+- Do not keep real production secrets in `solid.env` or Helm values committed to the repository.
+- In local kind deployments, the backend image still contains `solid.env`. If Helm injects an empty Kubernetes env var for a setting, that empty env var wins over the file value. Production should use explicit Kubernetes Secrets; local fallback should avoid injecting empty values.
 
 ## API overview
 

@@ -3,11 +3,23 @@ kind: Ingress
 metadata:
   name: frontend-ingress
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.entrypoints: {{ ternary "websecure" "web" .Values.ingress.tls.enabled | quote }}
+    {{- if .Values.ingress.tls.enabled }}
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    {{- end }}
 spec:
   ingressClassName: traefik-solid
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      {{- if .Values.ingress.tls.secretName }}
+      secretName: {{ .Values.ingress.tls.secretName | quote }}
+      {{- end }}
+  {{- end }}
   rules:
-  - http:
+  - host: {{ .Values.ingress.host | quote }}
+    http:
       paths:
       - path: /
         pathType: Prefix

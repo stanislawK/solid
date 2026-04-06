@@ -71,3 +71,14 @@ Create the name of the secret that stores DATABASE_URL.
 {{- printf "%s-db" (include "backend-service.fullname" .) }}
 {{- end }}
 {{- end }}
+
+{{/*
+Create the name of the secret that stores auth and app security settings.
+*/}}
+{{- define "backend-service.authSecretName" -}}
+{{- if .Values.auth.existingSecret }}
+{{- .Values.auth.existingSecret }}
+{{- else }}
+{{- printf "%s-auth" (include "backend-service.fullname" .) }}
+{{- end }}
+{{- end }}

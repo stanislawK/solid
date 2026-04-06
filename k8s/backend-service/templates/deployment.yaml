@@ -57,13 +57,66 @@ spec:
                 secretKeyRef:
                   name: glitchtip-secret
                   key: GLITCHTIP_DSN
+            - name: ENVIRONMENT
+              value: {{ .Values.app.environment | quote }}
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: {{ include "backend-service.databaseSecretName" . }}
                   key: {{ .Values.database.existingSecretKey }}
+            - name: FRONTEND_URL
+              value: {{ .Values.app.frontendUrl | quote }}
+            - name: GCP_REDIRECT_URI
+              value: {{ .Values.app.gcpRedirectUri | quote }}
+            - name: CORS_ALLOWED_ORIGINS
+              value: {{ .Values.app.corsAllowedOrigins | quote }}
+            - name: ALLOWED_HOSTS
+              value: {{ .Values.app.allowedHosts | quote }}
+            - name: DOCS_ENABLED
+              value: {{ .Values.app.docsEnabled | quote }}
+            - name: SECURITY_HEADERS_ENABLED
+              value: {{ .Values.app.securityHeadersEnabled | quote }}
+            - name: TRUST_PROXY_HEADERS
+              value: {{ .Values.app.trustProxyHeaders | quote }}
+            - name: STRICT_TRANSPORT_SECURITY_SECONDS
+              value: {{ printf "%d" (int .Values.app.strictTransportSecuritySeconds) | quote }}
+            - name: SESSION_HTTPS_ONLY
+              value: {{ .Values.app.session.httpsOnly | quote }}
+            - name: SESSION_SAME_SITE
+              value: {{ .Values.app.session.sameSite | quote }}
             - name: STORAGE_DIR
               value: /app/data
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "backend-service.authSecretName" . }}
+                  key: JWT_SECRET_KEY
+            - name: SESSION_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "backend-service.authSecretName" . }}
+                  key: SESSION_SECRET_KEY
+            {{- if or .Values.auth.existingSecret .Values.auth.gcpClientId }}
+            - name: GCP_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "backend-service.authSecretName" . }}
+                  key: GCP_CLIENT_ID
+            {{- end }}
+            {{- if or .Values.auth.existingSecret .Values.auth.gcpClientSecret }}
+            - name: GCP_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "backend-service.authSecretName" . }}
+                  key: GCP_CLIENT_SECRET
+            {{- end }}
+            {{- if or .Values.auth.existingSecret .Values.auth.adminEmail }}
+            - name: ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "backend-service.authSecretName" . }}
+                  key: ADMIN_EMAIL
+            {{- end }}
             {{- if .Values.observability.otel.enabled }}
             - name: OTEL_SERVICE_NAME
               value: {{ .Values.observability.otel.serviceName | quote }}

@@ -1,5 +1,6 @@
 import secrets
 from datetime import datetime, timezone
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -107,6 +108,48 @@ def _clear_auth_cookies(response: Response) -> None:
         path="/",
         samesite=settings.session_same_site,
         secure=settings.session_https_only,
+    )
+
+
+def _set_no_store_headers(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+
+
+def _get_request_client_ip(request: Request) -> str | None:
+    if settings.trust_proxy_headers:
+        forwarded_for = request.headers.get("x-forwarded-for")
+        if forwarded_for:
+            return forwarded_for.split(",", maxsplit=1)[0].strip() or None
+
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip() or None
+
+    return request.client.host if request.client is not None else None
+
+
+def _build_frontend_redirect_url(auth_error: str | None = None) -> str:
+    parsed = urlsplit(settings.frontend_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise RuntimeError("FRONTEND_URL must be an absolute http(s) URL")
+
+    query_params = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key != "auth_error"
+    ]
+    if auth_error is not None:
+        query_params.append(("auth_error", auth_error))
+
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path or "/",
+            urlencode(query_params),
+            "",
+        )
     )
     response.delete_cookie(
         settings.auth_refresh_cookie_name,
@@ -247,20 +290,21 @@ async def auth_callback(
         result = await auth_service.process_google_user(
             user_info,
             user_agent=request.headers.get("user-agent"),
-            ip_address=request.client.host if request.client is not None else None,
+            ip_address=_get_request_client_ip(request),
         )
-        response = RedirectResponse(url=settings.frontend_url)
+        response = RedirectResponse(url=_build_frontend_redirect_url())
         _set_auth_cookies(response, result)
+        _set_no_store_headers(response)
         return response
     except PermissionError:
-        response = RedirectResponse(url=f"{settings.frontend_url}?auth_error=inactive")
+        response = RedirectResponse(url=_build_frontend_redirect_url("inactive"))
         _clear_auth_cookies(response)
+        _set_no_store_headers(response)
         return response
     except Exception:
-        response = RedirectResponse(
-            url=f"{settings.frontend_url}?auth_error=server_error"
-        )
+        response = RedirectResponse(url=_build_frontend_redirect_url("server_error"))
         _clear_auth_cookies(response)
+        _set_no_store_headers(response)
         return response
 
 
@@ -297,7 +341,7 @@ async def refresh_auth_session(
         result = await auth_service.refresh_session(
             refresh_token,
             user_agent=request.headers.get("user-agent"),
-            ip_address=request.client.host if request.client is not None else None,
+            ip_address=_get_request_client_ip(request),
         )
     except PermissionError:
         response = JSONResponse(
@@ -305,10 +349,12 @@ async def refresh_auth_session(
             content={"detail": "Refresh failed"},
         )
         _clear_auth_cookies(response)
+        _set_no_store_headers(response)
         return response
 
     response = JSONResponse({"message": "Session refreshed"})
     _set_auth_cookies(response, result)
+    _set_no_store_headers(response)
     return response
 
 
@@ -324,6 +370,7 @@ async def logout(
 
     response = JSONResponse({"message": "Logged out"})
     _clear_auth_cookies(response)
+    _set_no_store_headers(response)
     return response
 
 

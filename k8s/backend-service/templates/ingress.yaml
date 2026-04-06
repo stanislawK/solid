@@ -3,12 +3,24 @@ kind: Ingress
 metadata:
   name: main-ingress
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
-    traefik.ingress.kubernetes.io/router.middlewares: default-api-stripprefix@kubernetescrd
+    traefik.ingress.kubernetes.io/router.entrypoints: {{ ternary "websecure" "web" .Values.ingress.tls.enabled | quote }}
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-api-stripprefix@kubernetescrd,{{ .Release.Namespace }}-api-security-headers@kubernetescrd
+    {{- if .Values.ingress.tls.enabled }}
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    {{- end }}
 spec:
   ingressClassName: traefik-solid
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      {{- if .Values.ingress.tls.secretName }}
+      secretName: {{ .Values.ingress.tls.secretName | quote }}
+      {{- end }}
+  {{- end }}
   rules:
-  - http:
+  - host: {{ .Values.ingress.host | quote }}
+    http:
       paths:
       - path: /api
         pathType: Prefix
@@ -17,7 +29,8 @@ spec:
             name: backend-backend-service
             port:
               number: {{ .Values.service.port }}
-  - host: monitoring.local
+  {{- if .Values.ingress.monitoring.enabled }}
+  - host: {{ .Values.ingress.monitoring.host | quote }}
     http:
       paths:
       - path: /
@@ -27,7 +40,9 @@ spec:
             name: monitoring-grafana
             port:
               number: 80
-  - host: glitchtip.local
+  {{- end }}
+  {{- if .Values.ingress.glitchtip.enabled }}
+  - host: {{ .Values.ingress.glitchtip.host | quote }}
     http:
       paths:
       - path: /
@@ -37,3 +52,4 @@ spec:
             name: glitchtip-solid-web
             port:
               number: 80
+  {{- end }}
