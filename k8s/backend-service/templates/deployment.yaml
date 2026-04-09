@@ -52,11 +52,13 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
+            {{- if .Values.observability.glitchtip.enabled }}
             - name: GLITCHTIP_DSN
               valueFrom:
                 secretKeyRef:
-                  name: glitchtip-secret
-                  key: GLITCHTIP_DSN
+                  name: {{ .Values.observability.glitchtip.existingSecret }}
+                  key: {{ .Values.observability.glitchtip.existingSecretKey }}
+            {{- end }}
             - name: ENVIRONMENT
               value: {{ .Values.app.environment | quote }}
             - name: DATABASE_URL

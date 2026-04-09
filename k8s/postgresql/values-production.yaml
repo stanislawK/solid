@@ -1,0 +1,44 @@
+architecture: standalone
+
+image:
+  debug: false
+
+auth:
+  enablePostgresUser: true
+
+primary:
+  persistence:
+    enabled: true
+    size: 6Gi
+  resources:
+    requests:
+      cpu: 150m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+  startupProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30
+    successThreshold: 1
+  extendedConfiguration: |
+    password_encryption = scram-sha-256
+    max_connections = 60
+    shared_buffers = 128MB
+    effective_cache_size = 512MB
+    maintenance_work_mem = 64MB
+    work_mem = 4MB
+    random_page_cost = 1.1
+  initdb:
+    scripts:
+      01-init.sql: |
+        ALTER DATABASE "{{ .Values.auth.database }}" SET search_path TO public;
+
+metrics:
+  enabled: false
+
+backup:
+  enabled: false

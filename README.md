@@ -112,6 +112,192 @@ Notes:
 - Do not keep real production secrets in `solid.env` or Helm values committed to the repository.
 - In local kind deployments, the backend image still contains `solid.env`. If Helm injects an empty Kubernetes env var for a setting, that empty env var wins over the file value. Production should use explicit Kubernetes Secrets; local fallback should avoid injecting empty values.
 
+## Production on Hetzner ARM64
+
+The repository now includes a production-oriented path for a single ARM64 VPS with k3s. The intent is to keep development and production logic separate instead of overloading the current kind workflow.
+
+What is included:
+
+- Production Helm overrides in `k8s/backend-service/values-production.yaml` and `k8s/frontend-service/values-production.yaml`
+- Production PostgreSQL overrides in `k8s/postgresql/values-production.yaml` for a lightweight in-cluster database on the VPS
+- Production Traefik values in `k8s/traefik-values-production.yaml` for Cloudflare DNS challenge + Let's Encrypt
+- Prod-only scripts in `scripts/` for secret bootstrap and ARM64 deploys
+- Backend chart support for disabling GlitchTip DSN injection when self-hosted GlitchTip is not part of production
+- Configurable backend PVC sizing for tighter disk control
+
+Recommended production model for a small Hetzner node:
+
+- k3s instead of kind
+- Cloudflare in front of Traefik
+- Frontend and backend on the same host, with `/api` routed to the backend
+- PostgreSQL on the same VPS for the first production cut
+- Grafana Cloud instead of self-hosted Grafana, Loki, and Tempo
+
+### Production values
+
+Before deploying, replace the placeholder values in:
+
+- `k8s/traefik-values-production.yaml`
+- `k8s/backend-service/values-production.yaml`
+- `k8s/frontend-service/values-production.yaml`
+- `k8s/postgresql/values-production.yaml`
+
+At minimum, update:
+
+- the Let's Encrypt account email in `k8s/traefik-values-production.yaml`
+- the Traefik storage class in `k8s/traefik-values-production.yaml` if your k3s cluster does not use `local-path`
+- `example.com`
+- any resource or PVC sizing values that should differ from the defaults
+
+### Traefik production install
+
+The backend and frontend production scripts do not install the ingress controller. Traefik remains a separate cluster-level release, but its production configuration is versioned in this repository.
+
+This repository uses Traefik with:
+
+- Kubernetes Ingress provider
+- ingress class `traefik-solid`
+- NodePorts `30080` and `30443`
+- HTTP to HTTPS redirect on the Traefik entrypoint
+- Let's Encrypt certificates obtained by Traefik via Cloudflare DNS challenge
+- forwarded headers trusted only from published Cloudflare IP ranges
+
+Create the Cloudflare DNS token secret in Kubernetes before installing Traefik:
+
+```bash
+kubectl -n default create secret generic traefik-cloudflare-dns \
+	--from-literal=CF_DNS_API_TOKEN='replace-with-cloudflare-api-token'
+```
+
+The token should be scoped only for the DNS zone Traefik must solve challenges for. A minimal Cloudflare API token typically needs:
+
+- `Zone:DNS:Edit`
+- `Zone:Zone:Read`
+
+Install or upgrade Traefik with the production values from this repository:
+
+```bash
+helm repo add traefik https://traefik.github.io/charts
+helm repo update
+helm upgrade --install traefik-solid traefik/traefik \
+	-n default \
+	-f ./k8s/traefik-values-production.yaml
+```
+
+How the certificate is obtained:
+
+- You do not create the Let's Encrypt certificate manually.
+- Traefik uses the Cloudflare API token to create the temporary DNS TXT records required for ACME DNS challenge.
+- Traefik stores the ACME account and issued certificates in `/data/acme.json` on its persistent volume.
+- Traefik renews the certificate automatically.
+
+What must exist for that to work:
+
+- the public DNS record in Cloudflare for your hostname, with Cloudflare proxy enabled
+- the `traefik-cloudflare-dns` Kubernetes Secret containing `CF_DNS_API_TOKEN`
+- persistent storage for Traefik so `/data/acme.json` survives pod restarts
+- port `80` and `443` traffic from Cloudflare reaching the node, usually through NodePorts `30080` and `30443`
+
+Recommended origin hardening:
+
+- keep Traefik `forwardedHeaders.trustedIPs` restricted to Cloudflare ranges only
+- allow inbound traffic to origin ports `80` and `443` only from Cloudflare IP ranges at the VPS firewall level
+- do not expose the Traefik dashboard publicly
+
+Useful verification commands after Traefik install:
+
+```bash
+kubectl get ingressclass
+kubectl -n default get svc traefik-solid
+kubectl -n default logs deploy/traefik-solid --tail=100 | grep -i acme
+```
+
+### Production secrets
+
+Do not use a committed `.env` file for production. Instead, keep a server-local env file outside the repository and apply it into Kubernetes Secrets.
+
+Example template:
+
+```bash
+cp scripts/prod-secrets.env.example /root/solid-prod-secrets.env
+```
+
+Create or update the secrets in the cluster:
+
+```bash
+SECRETS_ENV_FILE=/root/solid-prod-secrets.env ./scripts/prod-bootstrap-secrets.sh
+```
+
+This creates or updates:
+
+- `backend-postgres-auth`
+- `backend-db`
+- `backend-auth`
+- `glitchtip-secret` only when `GLITCHTIP_DSN` is set
+
+`backend-db` is generated from the PostgreSQL credentials and points the backend at the in-cluster PostgreSQL service. The standard VPS deployment path no longer requires you to put a raw production `DATABASE_URL` in the server-local env file.
+
+### Production PostgreSQL
+
+Production now expects a dedicated PostgreSQL release in the same k3s cluster. The production scripts install or upgrade it before the backend so the backend migration Job can connect cleanly during `helm upgrade`.
+
+The PostgreSQL deployment is intentionally small for a Hetzner cax11-class VPS:
+
+- single instance
+- persistent volume
+- ClusterIP-only service inside the cluster
+- conservative CPU and memory limits
+- separate Kubernetes secret for database credentials
+
+Tune the database footprint in `k8s/postgresql/values-production.yaml` if your node sizing changes.
+
+### ARM64 production deploys on the VPS
+
+The production scripts are designed for native ARM64 builds on the target VPS. They build Docker images locally and import them into the single-node k3s container runtime before running Helm upgrades.
+
+Deploy order for backend-aware production scripts is now:
+
+1. PostgreSQL
+2. Backend migration job plus backend deployment
+3. Frontend deployment
+
+Deploy both services:
+
+```bash
+IMAGE_TAG=$(git rev-parse --short HEAD) ./scripts/prod-deploy.sh
+```
+
+Deploy only the backend:
+
+```bash
+IMAGE_TAG=$(git rev-parse --short HEAD) ./scripts/prod-deploy-backend.sh
+```
+
+Deploy only the frontend:
+
+```bash
+IMAGE_TAG=$(git rev-parse --short HEAD) ./scripts/prod-deploy-frontend.sh
+```
+
+Reapply Helm configuration without rebuilding images:
+
+```bash
+IMAGE_TAG=$(git rev-parse --short HEAD) ./scripts/prod-reapply.sh
+IMAGE_TAG=$(git rev-parse --short HEAD) ./scripts/prod-reapply-backend.sh
+IMAGE_TAG=$(git rev-parse --short HEAD) ./scripts/prod-reapply-frontend.sh
+```
+
+Optional environment variables supported by the deploy scripts:
+
+- `KUBE_NAMESPACE` default: `default`
+- `BACKEND_RELEASE` default: `backend`
+- `FRONTEND_RELEASE` default: `frontend`
+- `BACKEND_IMAGE_REPOSITORY` default: `solid-backend`
+- `FRONTEND_IMAGE_REPOSITORY` default: `solid-frontend`
+- `IMAGE_TAG` default: current git short SHA, or a timestamp if git is unavailable
+
+The scripts assume `docker`, `kubectl`, `helm`, and `k3s` are installed on the server, and that `sudo k3s ctr images import` is available for loading images into the cluster.
+
 ## API overview
 
 - `GET /health` → health check
@@ -208,9 +394,14 @@ For GlitchTip on a small VPS, Valkey/Redis is optional. Current GlitchTip docs s
 
 Add traefik:
 ```bash
+kubectl -n default create secret generic traefik-cloudflare-dns \
+	--from-literal=CF_DNS_API_TOKEN='replace-with-cloudflare-api-token'
+
 helm repo add traefik https://traefik.github.io/charts
 helm repo update
-helm install traefik-solid traefik/traefik
+helm upgrade --install traefik-solid traefik/traefik \
+	-n default \
+	-f ./k8s/traefik-values-production.yaml
 ```
 
 Add prometheus:

@@ -1,0 +1,65 @@
+replicaCount: 1
+
+image:
+  repository: solid-backend
+  pullPolicy: IfNotPresent
+  tag: "prod-local"
+
+app:
+  environment: production
+  frontendUrl: "https://example.com"
+  gcpRedirectUri: "https://example.com/api/auth/callback"
+  corsAllowedOrigins: "https://example.com"
+  allowedHosts: "example.com"
+  docsEnabled: false
+  securityHeadersEnabled: true
+  trustProxyHeaders: true
+  strictTransportSecuritySeconds: 31536000
+  session:
+    httpsOnly: true
+    sameSite: lax
+
+auth:
+  existingSecret: backend-auth
+
+database:
+  existingSecret: backend-db
+  existingSecretKey: DATABASE_URL
+
+storage:
+  size: 3Gi
+
+observability:
+  otel:
+    enabled: false
+  logs:
+    enabled: false
+  glitchtip:
+    enabled: false
+    existingSecret: glitchtip-secret
+    existingSecretKey: GLITCHTIP_DSN
+
+ingress:
+  enabled: true
+  className: traefik-solid
+  annotations: {}
+  host: example.com
+  tls:
+    enabled: true
+    secretName: ""
+    certResolver: letsencrypt
+  monitoring:
+    enabled: false
+  glitchtip:
+    enabled: false
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false

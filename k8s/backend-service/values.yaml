@@ -84,6 +84,9 @@ database:
   existingSecret: ""
   existingSecretKey: "DATABASE_URL"
 
+storage:
+  size: 1Gi
+
 migrations:
   enabled: true
   backoffLimit: 3
@@ -102,13 +105,21 @@ observability:
     podAnnotations:
       loki.grafana.com/scrape: "true"
       loki.grafana.com/job: "solid-backend"
+  glitchtip:
+    enabled: false
+    existingSecret: "glitchtip-secret"
+    existingSecretKey: "GLITCHTIP_DSN"
 
 # This block is for setting up the ingress for more information can be found here: https://kubernetes.io/docs/concepts/services-networking/ingress/
 ingress:
+  enabled: true
+  className: traefik-solid
+  annotations: {}
   host: localhost
   tls:
     enabled: false
     secretName: ""
+    certResolver: ""
   monitoring:
     enabled: false
     host: monitoring.local

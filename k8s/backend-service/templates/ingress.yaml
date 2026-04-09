@@ -1,3 +1,4 @@
+{{- if .Values.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -8,8 +9,14 @@ metadata:
     {{- if .Values.ingress.tls.enabled }}
     traefik.ingress.kubernetes.io/router.tls: "true"
     {{- end }}
+    {{- if and .Values.ingress.tls.enabled .Values.ingress.tls.certResolver }}
+    traefik.ingress.kubernetes.io/router.tls.certresolver: {{ .Values.ingress.tls.certResolver | quote }}
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 spec:
-  ingressClassName: traefik-solid
+  ingressClassName: {{ .Values.ingress.className | quote }}
   {{- if .Values.ingress.tls.enabled }}
   tls:
     - hosts:
@@ -53,3 +60,4 @@ spec:
             port:
               number: 80
   {{- end }}
+{{- end }}
