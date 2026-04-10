@@ -104,6 +104,7 @@ spec:
                 secretKeyRef:
                   name: {{ include "backend-service.authSecretName" . }}
                   key: GCP_CLIENT_ID
+                  optional: true
             {{- end }}
             {{- if or .Values.auth.existingSecret .Values.auth.gcpClientSecret }}
             - name: GCP_CLIENT_SECRET
@@ -111,6 +112,7 @@ spec:
                 secretKeyRef:
                   name: {{ include "backend-service.authSecretName" . }}
                   key: GCP_CLIENT_SECRET
+                  optional: true
             {{- end }}
             {{- if or .Values.auth.existingSecret .Values.auth.adminEmail }}
             - name: ADMIN_EMAIL
@@ -118,6 +120,7 @@ spec:
                 secretKeyRef:
                   name: {{ include "backend-service.authSecretName" . }}
                   key: ADMIN_EMAIL
+                  optional: true
             {{- end }}
             {{- if .Values.observability.otel.enabled }}
             - name: OTEL_SERVICE_NAME
