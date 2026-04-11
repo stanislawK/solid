@@ -287,6 +287,11 @@ IMAGE_TAG=$(git rev-parse --short HEAD) ./scripts/prod-reapply-backend.sh
 IMAGE_TAG=$(git rev-parse --short HEAD) ./scripts/prod-reapply-frontend.sh
 ```
 
+Delete backend prod:
+kubectl -n default scale deployment/backend-backend-service --replicas=0 || true
+helm -n default uninstall backend
+kubectl -n default delete pvc backend-backend-service-data --ignore-not-found
+
 Optional environment variables supported by the deploy scripts:
 
 - `KUBE_NAMESPACE` default: `default`
@@ -297,6 +302,21 @@ Optional environment variables supported by the deploy scripts:
 - `IMAGE_TAG` default: current git short SHA, or a timestamp if git is unavailable
 
 The scripts assume `docker`, `kubectl`, `helm`, and `k3s` are installed on the server, and that `sudo k3s ctr images import` is available for loading images into the cluster.
+
+Production app config note:
+
+- The backend pod does not automatically read a server-local `solid-prod.env` file from the VPS filesystem.
+- In Kubernetes production, `FRONTEND_URL`, `GCP_REDIRECT_URI`, `CORS_ALLOWED_ORIGINS`, `ALLOWED_HOSTS`, and related app settings come from the Helm release values.
+- The production deploy scripts now support an optional `APP_ENV_FILE` and will map values from that file into Helm overrides.
+- By default, `APP_ENV_FILE` is `./solid-prod.env` at the repo root when that file exists.
+
+Example:
+
+```bash
+APP_ENV_FILE=/root/solid-prod.env IMAGE_TAG=$(git rev-parse --short HEAD) ./scripts/prod-deploy.sh
+```
+
+If you prefer not to use `APP_ENV_FILE`, set the real production domain directly in `k8s/backend-service/values-production.yaml`.
 
 ## API overview
 

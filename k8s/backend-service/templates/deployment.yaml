@@ -122,6 +122,14 @@ spec:
                   key: ADMIN_EMAIL
                   optional: true
             {{- end }}
+            {{- if or .Values.auth.existingSecret .Values.auth.gemApiKey }}
+            - name: GEM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "backend-service.authSecretName" . }}
+                  key: GEM_API_KEY
+                  optional: true
+            {{- end }}
             {{- if .Values.observability.otel.enabled }}
             - name: OTEL_SERVICE_NAME
               value: {{ .Values.observability.otel.serviceName | quote }}

@@ -30,6 +30,20 @@ REPO_ROOT=$(cd -- "$SCRIPT_DIR/.." && pwd)
 : "${ROLLOUT_TIMEOUT:=180s}"
 : "${K3S_BIN:=k3s}"
 : "${K3S_SUDO:=sudo}"
+: "${APP_ENV_FILE:=$REPO_ROOT/solid-prod.env}"
+
+load_env_file_if_present() {
+  local file_path=$1
+
+  if [[ -f "$file_path" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$file_path"
+    set +a
+  fi
+}
+
+load_env_file_if_present "$APP_ENV_FILE"
 
 require_cmd() {
   local cmd
@@ -130,14 +144,30 @@ import_image_into_k3s() {
 
 deploy_backend_release() {
   ensure_file "$BACKEND_VALUES_FILE"
-  helm upgrade --install "$BACKEND_RELEASE" "$REPO_ROOT/k8s/backend-service" \
-    --namespace "$KUBE_NAMESPACE" \
-    --create-namespace \
-    --wait \
-    --timeout "$HELM_TIMEOUT" \
-    -f "$BACKEND_VALUES_FILE" \
-    --set-string image.repository="$BACKEND_IMAGE_REPOSITORY" \
+  local helm_args=(
+    upgrade --install "$BACKEND_RELEASE" "$REPO_ROOT/k8s/backend-service"
+    --namespace "$KUBE_NAMESPACE"
+    --create-namespace
+    --wait
+    --timeout "$HELM_TIMEOUT"
+    -f "$BACKEND_VALUES_FILE"
+    --set-string image.repository="$BACKEND_IMAGE_REPOSITORY"
     --set-string image.tag="$IMAGE_TAG"
+  )
+
+  [[ -n "${ENVIRONMENT:-}" ]] && helm_args+=(--set-string app.environment="$ENVIRONMENT")
+  [[ -n "${FRONTEND_URL:-}" ]] && helm_args+=(--set-string app.frontendUrl="$FRONTEND_URL")
+  [[ -n "${GCP_REDIRECT_URI:-}" ]] && helm_args+=(--set-string app.gcpRedirectUri="$GCP_REDIRECT_URI")
+  [[ -n "${CORS_ALLOWED_ORIGINS:-}" ]] && helm_args+=(--set-string app.corsAllowedOrigins="$CORS_ALLOWED_ORIGINS")
+  [[ -n "${ALLOWED_HOSTS:-}" ]] && helm_args+=(--set-string app.allowedHosts="$ALLOWED_HOSTS")
+  [[ -n "${DOCS_ENABLED:-}" ]] && helm_args+=(--set-string app.docsEnabled="$DOCS_ENABLED")
+  [[ -n "${SECURITY_HEADERS_ENABLED:-}" ]] && helm_args+=(--set-string app.securityHeadersEnabled="$SECURITY_HEADERS_ENABLED")
+  [[ -n "${TRUST_PROXY_HEADERS:-}" ]] && helm_args+=(--set-string app.trustProxyHeaders="$TRUST_PROXY_HEADERS")
+  [[ -n "${STRICT_TRANSPORT_SECURITY_SECONDS:-}" ]] && helm_args+=(--set-string app.strictTransportSecuritySeconds="$STRICT_TRANSPORT_SECURITY_SECONDS")
+  [[ -n "${SESSION_HTTPS_ONLY:-}" ]] && helm_args+=(--set-string app.session.httpsOnly="$SESSION_HTTPS_ONLY")
+  [[ -n "${SESSION_SAME_SITE:-}" ]] && helm_args+=(--set-string app.session.sameSite="$SESSION_SAME_SITE")
+
+  helm "${helm_args[@]}"
 }
 
 deploy_frontend_release() {

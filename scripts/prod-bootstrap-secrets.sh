@@ -71,6 +71,10 @@ if [[ -n "${ADMIN_EMAIL:-}" ]]; then
   auth_secret_args+=(--from-literal=ADMIN_EMAIL="$ADMIN_EMAIL")
 fi
 
+if [[ -n "${GEM_API_KEY:-}" ]]; then
+  auth_secret_args+=(--from-literal=GEM_API_KEY="$GEM_API_KEY")
+fi
+
 kubectl -n "$KUBE_NAMESPACE" create secret generic backend-auth \
   "${auth_secret_args[@]}" \
   --dry-run=client \
