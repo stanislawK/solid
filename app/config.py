@@ -9,7 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", "solid.env"),
+        env_file=(".env", "solid.env", "solid-prod.env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -94,20 +94,22 @@ class Settings(BaseSettings):
 
         if self.environment == "production":
             if not self.session_https_only:
-                raise ValueError(
-                    "SESSION_HTTPS_ONLY must be enabled in production"
-                )
+                raise ValueError("SESSION_HTTPS_ONLY must be enabled in production")
             if self.frontend_url.startswith("http://"):
-                raise ValueError("FRONTEND_URL must use https in production")
+                raise ValueError(
+                    f"FRONTEND_URL {self.frontend_url} must use https in production"
+                )
             if self.gcp_redirect_uri.startswith("http://"):
-                raise ValueError("GCP_REDIRECT_URI must use https in production")
+                raise ValueError(
+                    f"GCP_REDIRECT_URI {self.gcp_redirect_uri} must use https in production"
+                )
             if self.jwt_secret_key.startswith("development-"):
                 raise ValueError(
-                    "JWT_SECRET_KEY must be replaced with a production secret"
+                    f"JWT_SECRET_KEY {self.jwt_secret_key} must be replaced with a production secret"
                 )
             if self.session_secret_key.startswith("development-"):
                 raise ValueError(
-                    "SESSION_SECRET_KEY must be replaced with a production secret"
+                    f"SESSION_SECRET_KEY {self.session_secret_key} must be replaced with a production secret"
                 )
 
         return self

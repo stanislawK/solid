@@ -102,6 +102,7 @@ async def add_security_headers(request: Request, call_next):
 
     return response
 
+
 app.include_router(health.router)
 app.include_router(plants.router)
 app.include_router(wiki.router)
