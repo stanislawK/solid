@@ -157,7 +157,7 @@ This repository uses Traefik with:
 
 - Kubernetes Ingress provider
 - ingress class `traefik-solid`
-- NodePorts `30080` and `30443`
+- k3s `LoadBalancer` service exposure on ports `80` and `443`
 - HTTP to HTTPS redirect on the Traefik entrypoint
 - Let's Encrypt certificates obtained by Traefik via Cloudflare DNS challenge
 - forwarded headers trusted only from published Cloudflare IP ranges
@@ -196,7 +196,8 @@ What must exist for that to work:
 - the public DNS record in Cloudflare for your hostname, with Cloudflare proxy enabled
 - the `traefik-cloudflare-dns` Kubernetes Secret containing `CF_DNS_API_TOKEN`
 - persistent storage for Traefik so `/data/acme.json` survives pod restarts
-- port `80` and `443` traffic from Cloudflare reaching the node, usually through NodePorts `30080` and `30443`
+- port `80` and `443` traffic from Cloudflare reaching the node
+- k3s ServiceLB enabled, or another LoadBalancer implementation that exposes Traefik on the node's public `80` and `443`
 
 Recommended origin hardening:
 

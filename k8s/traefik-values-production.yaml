@@ -19,14 +19,13 @@ podSecurityContext:
   fsGroupChangePolicy: OnRootMismatch
 
 service:
-  type: NodePort
+  type: LoadBalancer
 
 ports:
   traefik:
     expose:
       default: false
   web:
-    nodePort: 30080
     forwardedHeaders:
       trustedIPs:
         - 173.245.48.0/20
@@ -58,7 +57,6 @@ ports:
           scheme: https
           permanent: true
   websecure:
-    nodePort: 30443
     forwardedHeaders:
       trustedIPs:
         - 173.245.48.0/20
