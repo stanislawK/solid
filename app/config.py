@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     @cached_property
     def allowed_hosts_list(self) -> list[str]:
         hosts = self._split_csv(self.allowed_hosts)
+        for host in ("localhost", "127.0.0.1"):
+            if host not in hosts:
+                hosts.append(host)
         for url in (self.frontend_url, self.gcp_redirect_uri):
             host = urlsplit(url).hostname
             if host and host not in hosts:
