@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     browser: curl_cffi.requests.BrowserTypeLiteral = "chrome"
     gem_api_key: str = ""
     glitchtip_dsn: str = ""
-    otel_enabled: bool = True
+    otel_enabled: bool = False
     otel_service_name: str = "solid-backend"
     otel_exporter_otlp_endpoint: str = (
         "http://otel-collector-opentelemetry-collector.default.svc.cluster.local:4318"

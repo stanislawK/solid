@@ -86,6 +86,8 @@ spec:
               value: {{ .Values.app.session.httpsOnly | quote }}
             - name: SESSION_SAME_SITE
               value: {{ .Values.app.session.sameSite | quote }}
+            - name: OTEL_ENABLED
+              value: {{ .Values.observability.otel.enabled | quote }}
             - name: STORAGE_DIR
               value: /app/data
             - name: JWT_SECRET_KEY
