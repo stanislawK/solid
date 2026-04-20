@@ -31,6 +31,20 @@ storage:
 
 observability:
   otel:
+    enabled: true
+    serviceName: "solid-backend"
+    exporter:
+      endpoint: "http://alloy.default.svc.cluster.local:4318"
+      protocol: "http/protobuf"
+    resourceAttributes: "deployment.environment=production,service.namespace=default"
+  logs:
+    enabled: true
+    podAnnotations:
+      loki.grafana.com/scrape: "true"
+      loki.grafana.com/job: "solid-backend"
+
+observability:
+  otel:
     enabled: false
   logs:
     enabled: false

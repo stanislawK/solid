@@ -89,5 +89,23 @@ else
   echo "GLITCHTIP_DSN not set; skipping glitchtip-secret creation."
 fi
 
+grafana_cloud_args=()
+[[ -n "${GRAFANA_CLOUD_LOGS_URL:-}" ]] && grafana_cloud_args+=(--from-literal=GRAFANA_CLOUD_LOGS_URL="$GRAFANA_CLOUD_LOGS_URL")
+[[ -n "${GRAFANA_CLOUD_LOGS_USER:-}" ]] && grafana_cloud_args+=(--from-literal=GRAFANA_CLOUD_LOGS_USER="$GRAFANA_CLOUD_LOGS_USER")
+[[ -n "${GRAFANA_CLOUD_TRACES_URL:-}" ]] && grafana_cloud_args+=(--from-literal=GRAFANA_CLOUD_TRACES_URL="$GRAFANA_CLOUD_TRACES_URL")
+[[ -n "${GRAFANA_CLOUD_TRACES_USER:-}" ]] && grafana_cloud_args+=(--from-literal=GRAFANA_CLOUD_TRACES_USER="$GRAFANA_CLOUD_TRACES_USER")
+[[ -n "${GRAFANA_CLOUD_METRICS_URL:-}" ]] && grafana_cloud_args+=(--from-literal=GRAFANA_CLOUD_METRICS_URL="$GRAFANA_CLOUD_METRICS_URL")
+[[ -n "${GRAFANA_CLOUD_METRICS_USER:-}" ]] && grafana_cloud_args+=(--from-literal=GRAFANA_CLOUD_METRICS_USER="$GRAFANA_CLOUD_METRICS_USER")
+[[ -n "${GRAFANA_CLOUD_TOKEN:-}" ]] && grafana_cloud_args+=(--from-literal=GRAFANA_CLOUD_TOKEN="$GRAFANA_CLOUD_TOKEN")
+
+if [[ ${#grafana_cloud_args[@]} -gt 0 ]]; then
+  kubectl -n "$KUBE_NAMESPACE" create secret generic grafana-cloud-auth \
+    "${grafana_cloud_args[@]}" \
+    --dry-run=client \
+    -o yaml | kubectl apply -f -
+else
+  echo "Grafana Cloud configs not found; skipping grafana-cloud-auth creation."
+fi
+
 echo "Production secrets applied in namespace $KUBE_NAMESPACE."
 echo "Backend DATABASE_URL now targets ${POSTGRES_SERVICE_NAME}:${POSTGRES_SERVICE_PORT}/${POSTGRES_DATABASE}."

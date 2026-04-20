@@ -116,6 +116,13 @@ ensure_bitnami_repo() {
   helm repo update bitnami >/dev/null
 }
 
+ensure_grafana_repo() {
+  if ! helm repo list | awk '{print $1}' | grep -qx grafana; then
+    helm repo add grafana https://grafana.github.io/helm-charts >/dev/null
+  fi
+  helm repo update grafana >/dev/null
+}
+
 deploy_postgres_release() {
   ensure_file "$POSTGRES_VALUES_FILE"
   ensure_bitnami_repo
@@ -140,6 +147,16 @@ import_image_into_k3s() {
   docker save -o "$tar_path" "$image_ref"
   "$K3S_SUDO" "$K3S_BIN" ctr images import "$tar_path"
   rm -f "$tar_path"
+}
+
+deploy_alloy_release() {
+  ensure_grafana_repo
+  helm upgrade --install alloy grafana/alloy \
+    --namespace "$KUBE_NAMESPACE" \
+    --create-namespace \
+    --wait \
+    --timeout "$HELM_TIMEOUT" \
+    -f "$REPO_ROOT/k8s/alloy-values-production.yaml"
 }
 
 deploy_backend_release() {

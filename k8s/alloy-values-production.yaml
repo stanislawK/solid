@@ -1,0 +1,101 @@
+controller:
+  type: daemonset
+
+alloy:
+  envFrom:
+    - secretRef:
+        name: grafana-cloud-auth
+
+  configMap:
+    create: true
+    content: |
+      discovery.kubernetes "pods" {
+        role = "pod"
+      }
+
+      discovery.relabel "pods" {
+        targets = discovery.kubernetes.pods.targets
+
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app"]
+          target_label  = "app"
+        }
+      }
+
+      loki.source.kubernetes "pods" {
+        targets    = discovery.relabel.pods.output
+        forward_to = [loki.write.default.receiver]
+      }
+
+      loki.write "default" {
+        endpoint {
+          url = sys.env("GRAFANA_CLOUD_LOGS_URL")
+          basic_auth {
+            username = sys.env("GRAFANA_CLOUD_LOGS_USER")
+            password = sys.env("GRAFANA_CLOUD_TOKEN")
+          }
+        }
+      }
+
+      otelcol.receiver.otlp "default" {
+        grpc {
+          endpoint = "0.0.0.0:4317"
+        }
+        http {
+          endpoint = "0.0.0.0:4318"
+        }
+        output {
+          traces = [otelcol.processor.batch.default.input]
+        }
+      }
+
+      otelcol.processor.batch "default" {
+        output {
+          traces = [otelcol.exporter.otlphttp.default.input]
+        }
+      }
+
+      otelcol.exporter.otlphttp "default" {
+        client {
+          endpoint = sys.env("GRAFANA_CLOUD_TRACES_URL")
+          auth = otelcol.auth.basic.default.handler
+        }
+      }
+
+      otelcol.auth.basic "default" {
+        username = sys.env("GRAFANA_CLOUD_TRACES_USER")
+        password = sys.env("GRAFANA_CLOUD_TOKEN")
+      }
+
+      prometheus.exporter.unix "default" {
+      }
+
+      prometheus.scrape "unix" {
+        targets    = prometheus.exporter.unix.default.targets
+        forward_to = [prometheus.remote_write.default.receiver]
+      }
+
+      prometheus.remote_write "default" {
+        endpoint {
+          url = sys.env("GRAFANA_CLOUD_METRICS_URL")
+          basic_auth {
+            username = sys.env("GRAFANA_CLOUD_METRICS_USER")
+            password = sys.env("GRAFANA_CLOUD_TOKEN")
+          }
+        }
+      }

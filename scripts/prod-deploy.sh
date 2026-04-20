@@ -14,6 +14,7 @@ import_image_into_k3s "${FRONTEND_IMAGE_REPOSITORY}:${IMAGE_TAG}"
 ensure_postgres_bootstrap_secret
 deploy_postgres_release
 wait_for_postgres_rollout
+deploy_alloy_release
 ensure_backend_bootstrap_secrets
 deploy_backend_release
 wait_for_backend_rollout

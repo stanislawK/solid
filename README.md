@@ -427,75 +427,47 @@ helm upgrade --install traefik-solid traefik/traefik \
 
 Add prometheus:
 ```bash
+## Telemetry & Observability
+
+This repository offers two observability tracks: **Local (Kind) Development** and **Production (Grafana Cloud)**.
+
+### Local Development (Kind / K3d)
+For local or dev instances, the stack runs entirely within the cluster:
+*   **Traces:** Tempo + OpenTelemetry Collector
+*   **Logs:** Loki + Grafana Alloy
+*   **Metrics:** Prometheus + Grafana Dashboard
+
+To install these locally, ensure the Helm charts are added:
+```bash
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm install monitoring prometheus-community/kube-prometheus-stack \
   --set grafana.persistence.enabled=true \
   --set grafana.persistence.size=10Gi \
   --set grafana.persistence.storageClassName=standard
-```
 
-Get Grafana password:
-```bash
-kubectl -n default get secret monitoring-grafana -o jsonpath="{.data.admin-password}" | base64 -d; echo
-```
-
-Add Loki (centralized logs):
-```bash
 helm repo add grafana https://grafana.github.io/helm-charts
-helm repo update
-helm upgrade --install loki grafana/loki \
-  -n default \
-  -f ./k8s/loki-values.yaml
+helm upgrade --install loki grafana/loki -n default -f ./k8s/loki-values.yaml
+helm upgrade --install alloy grafana/alloy -n default -f ./k8s/alloy-values.yaml
 
-helm upgrade --install alloy grafana/alloy \
-  -n default \
-  -f ./k8s/alloy-values.yaml
-```
-
-If you already tried installing Loki with default chart values and got
-`Please define loki.storage.bucketNames.chunk`, run:
-```bash
-helm uninstall loki -n default || true
-helm upgrade --install loki grafana/loki \
-  -n default \
-  -f ./k8s/loki-values.yaml
-```
-
-Verify Loki + Alloy:
-```bash
-kubectl get pods -n default | grep -E 'loki|alloy'
-ALLOY_POD=$(kubectl get pod -n default -l app.kubernetes.io/instance=alloy -o jsonpath='{.items[0].metadata.name}')
-kubectl logs -n default "$ALLOY_POD" --tail=50
-```
-
-Add OpenTelemetry traces (Tempo + Collector):
-```bash
 helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
-helm repo update
 helm upgrade --install tempo grafana/tempo -n default
-helm upgrade --install otel-collector open-telemetry/opentelemetry-collector \
-  -n default \
-  -f ./k8s/otel-collector-values.yaml
+helm upgrade --install otel-collector open-telemetry/opentelemetry-collector -n default -f ./k8s/otel-collector-values.yaml
 ```
-
-Enable backend OTEL/log wiring from this repository chart:
+Enable backend wiring to the local services:
 ```bash
-helm upgrade --install backend ./k8s/backend-service \
-  -f ./k8s/backend-service/values-observability.yaml
+helm upgrade --install backend ./k8s/backend-service -f ./k8s/backend-service/values-observability.yaml
 ```
 
-Grafana datasources to add:
-- Loki (logs): `http://loki.default.svc.cluster.local:3100`
-- Tempo (traces): `http://tempo.default.svc.cluster.local:3200`
-- Use Grafana built-in `Tempo` datasource type (do not install Tempo plugin from Marketplace).
+### Production Observability (Grafana Cloud)
+For production, we use **Grafana Alloy** as a lightweight unified telemetry collector to push strictly out to the free tier of [Grafana Cloud](https://grafana.com). This offloads metrics/logs scaling from your cluster instances.
 
-In Grafana Explore, query logs with labels like:
-- `{namespace="default"}`
-- `{app="solid-backend"}`
+1.  Create a Grafana Cloud account.
+2.  Navigate to your Cloud Stack -> **Security** -> **Access Policies** and create a token that enables `traces:write`, `logs:write`, and `metrics:write`. 
+3.  Populate the `GRAFANA_CLOUD_*` properties inside your `.env` target on the VPS utilizing the endpoint URLs present on the Cloud Stack UI configuration screens.
+4.  Run the `./scripts/prod-bootstrap-secrets.sh` to generate the `grafana-cloud-auth` secret.
+5.  Deploy: `./scripts/prod-deploy.sh` (this script handles deploying Alloy and wiring the backend out automatically).
 
-Traefik note:
-- Backend, Collector, Loki, and Tempo communicate via internal Kubernetes Services (`*.svc.cluster.local`), not through Traefik.
-- Use Traefik Ingress only for external browser access (for example Grafana at `monitoring.local`).
+In Grafana Explore, you can query logs directly with `{app="solid-backend"}` seamlessly alongside your spans.
 
 ## Storage (Image Persistence)
 
