@@ -42,12 +42,6 @@ observability:
     podAnnotations:
       loki.grafana.com/scrape: "true"
       loki.grafana.com/job: "solid-backend"
-
-observability:
-  otel:
-    enabled: false
-  logs:
-    enabled: false
   glitchtip:
     enabled: false
     existingSecret: glitchtip-secret
