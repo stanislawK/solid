@@ -26,7 +26,6 @@ export function Dashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
-  const [isSearching, setIsSearching] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   useEffect(() => {
@@ -45,7 +44,6 @@ export function Dashboard() {
       setSearchTerm('');
       setDebouncedSearchTerm('');
       setLoading(false);
-      setIsSearching(false);
       setHasLoadedOnce(false);
       return;
     }
@@ -60,7 +58,6 @@ export function Dashboard() {
     const endpoint = searchParams.size > 0 ? `/api/plants?${searchParams.toString()}` : '/api/plants';
 
     setLoading(!hasLoadedOnce);
-    setIsSearching(hasLoadedOnce);
 
     apiFetch(endpoint, { signal: controller.signal })
       .then((res) => {
@@ -85,7 +82,6 @@ export function Dashboard() {
       .finally(() => {
         if (!controller.signal.aborted) {
           setLoading(false);
-          setIsSearching(false);
           setHasLoadedOnce(true);
         }
       });
@@ -101,23 +97,16 @@ export function Dashboard() {
     <div className="text-center space-y-4">
       <h1 className="text-4xl font-bold">Twoja kolekcja roślin</h1>
       <p className="text-xl text-muted-foreground">Oto rośliny pod Twoją opieką.</p>
-      <div className="mx-auto w-full max-w-md space-y-2 text-left">
-        <label htmlFor="plants-search" className="text-sm font-medium text-foreground">
-          Szukaj rośliny
-        </label>
+      <div className="mx-auto w-full max-w-md text-left">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             id="plants-search"
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
-            placeholder="Po nazwie lub nazwie łacińskiej"
+            placeholder="Szukaj rośliny po nazwie"
             className="h-11 pl-9"
           />
-        </div>
-        <div className="flex min-h-5 justify-between gap-3 text-sm text-muted-foreground">
-          <span>Wyniki odświeżają się automatycznie po krótkiej chwili.</span>
-          {isSearching && <span>Szukam...</span>}
         </div>
       </div>
     </div>
