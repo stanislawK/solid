@@ -173,7 +173,14 @@ class PlantService:
         new_plant_model = Plant(**plant_data.model_dump(), user_id=user_id)
         return await self.repository.save(new_plant_model)
 
-    async def get_all_for_user(self, user_id: int) -> list[Plant]:
+    async def get_all_for_user(
+        self, user_id: int, query: str | None = None
+    ) -> list[Plant]:
+        normalized_query = query.strip() if query is not None else ""
+        if normalized_query:
+            return await self.repository.search_all_by_user_id(
+                user_id, normalized_query
+            )
         return await self.repository.get_all_by_user_id(user_id)
 
     async def get_one_for_user(self, plant_id: int, user_id: int) -> Plant | None:

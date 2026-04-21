@@ -4,7 +4,7 @@ from typing import Protocol
 import os
 import uuid
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import AuthSession, Plant, User
@@ -64,6 +64,10 @@ class IPlantRepository(ABC):
         pass
 
     @abstractmethod
+    async def search_all_by_user_id(self, user_id: int, query: str) -> list[Plant]:
+        pass
+
+    @abstractmethod
     async def get_by_id_and_user_id(self, plant_id: int, user_id: int) -> Plant | None:
         pass
 
@@ -89,6 +93,21 @@ class SQLAlchemyPlantRepository(IPlantRepository):
     async def get_all_by_user_id(self, user_id: int) -> list[Plant]:
         result = await self.db.execute(
             select(Plant).where(Plant.user_id == user_id).order_by(Plant.id)
+        )
+        return list(result.scalars().all())
+
+    async def search_all_by_user_id(self, user_id: int, query: str) -> list[Plant]:
+        search_term = f"%{query}%"
+        result = await self.db.execute(
+            select(Plant)
+            .where(
+                Plant.user_id == user_id,
+                or_(
+                    Plant.name.ilike(search_term),
+                    Plant.latin_name.ilike(search_term),
+                ),
+            )
+            .order_by(Plant.id)
         )
         return list(result.scalars().all())
 

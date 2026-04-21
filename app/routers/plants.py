@@ -184,8 +184,9 @@ async def create_plant_manually(
 async def list_plants(
     service: Annotated[PlantService, Depends(get_plant_service)],
     current_user: Annotated[User, Depends(get_current_user)],
+    q: str | None = None,
 ) -> list[PlantRead]:
-    plants = await service.get_all_for_user(current_user.id)
+    plants = await service.get_all_for_user(current_user.id, query=q)
     return [PlantRead.model_validate(p) for p in plants]
 
 
