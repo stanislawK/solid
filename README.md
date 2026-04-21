@@ -319,6 +319,32 @@ APP_ENV_FILE=/root/solid-prod.env IMAGE_TAG=$(git rev-parse --short HEAD) ./scri
 
 If you prefer not to use `APP_ENV_FILE`, set the real production domain directly in `k8s/backend-service/values-production.yaml`.
 
+## Maintenance & Troubleshooting
+
+### Docker Cleanup
+
+When running Docker and Kubernetes on a VPS, disk space can fill up quickly over time. Here are some useful commands to reclaim space:
+
+```bash
+# Safely remove all unused images (those not associated with a running or stopped container)
+docker image prune -a
+
+# Remove unused volumes (WARNING: Data inside them will be lost if not attached)
+docker volume prune
+
+# Remove the builder cache (can save gigabytes if you build images on the VPS)
+docker builder prune
+
+# Or run a complete cleanup of all unused data (containers, networks, images, and optionally volumes)
+docker system prune -a --volumes
+```
+
+If you are using `containerd` inside your Kubernetes nodes (common with k3s/kind), use `crictl` to prune images:
+```bash
+crictl rmi --prune
+```
+
+
 ## API overview
 
 - `GET /health` → health check

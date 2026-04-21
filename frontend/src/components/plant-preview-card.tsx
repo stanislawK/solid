@@ -16,7 +16,7 @@ export function PlantPreviewCard({ plant, className }: PlantPreviewCardProps) {
       'overflow-hidden flex h-full flex-col bg-card transition-shadow duration-300',
       className,
     ].filter(Boolean).join(' ')}>
-      <div className="relative h-48 w-full shrink-0 overflow-hidden bg-muted flex items-center justify-center">
+      <div className="relative aspect-square w-full shrink-0 overflow-hidden bg-muted flex items-center justify-center">
         {imageUrl ? (
           <img
             src={imageUrl}

@@ -5,7 +5,7 @@ from typing import Protocol, cast
 
 import curl_cffi
 from curl_cffi import requests
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 
 class ImageDownloaderProtocol(Protocol):
@@ -50,6 +50,8 @@ class PillowImageProcessor(ImageProcessorProtocol):
 
     def optimize_image(self, image_bytes: bytes) -> bytes:
         with Image.open(BytesIO(image_bytes)) as img:
+            img = ImageOps.exif_transpose(img)
+
             if img.mode in ("RGBA", "P"):
                 img = img.convert("RGB")
 
