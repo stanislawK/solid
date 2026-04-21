@@ -16,16 +16,18 @@ export function PlantPreviewCard({ plant, className }: PlantPreviewCardProps) {
       'overflow-hidden flex h-full flex-col bg-card transition-shadow duration-300',
       className,
     ].filter(Boolean).join(' ')}>
-      <div className="relative aspect-square w-full shrink-0 overflow-hidden bg-muted flex items-center justify-center">
-        {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt={plant.name}
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <ImageIcon className="size-12 text-muted-foreground/50" />
-        )}
+      <div className="px-4 pt-4">
+        <div className="relative aspect-square w-full shrink-0 overflow-hidden rounded-xl bg-muted flex items-center justify-center">
+          {imageUrl ? (
+            <img
+              src={imageUrl}
+              alt={plant.name}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <ImageIcon className="size-12 text-muted-foreground/50" />
+          )}
+        </div>
       </div>
 
       <CardContent className="flex flex-1 flex-col p-5">
@@ -42,7 +44,7 @@ export function PlantPreviewCard({ plant, className }: PlantPreviewCardProps) {
 
         {plant.description && (
           <div className="mb-4 flex-1">
-            <p className="line-clamp-3 text-sm text-muted-foreground" title={plant.description}>
+            <p className="line-clamp-6 text-sm text-muted-foreground" title={plant.description}>
               {plant.description}
             </p>
           </div>
