@@ -17,9 +17,12 @@ from .image import (
     CurlImageDownloader,
     ImageDownloaderProtocol,
     ImageProcessorProtocol,
+    ImageUrlValidatorProtocol,
     ImageValidatorProtocol,
     PillowImageProcessor,
     PillowImageValidator,
+    SsrfSafeImageUrlValidator,
+    UnsafeImageUrlError,
 )
 from .plants import DesertStrategy, PlantService, TropicalStrategy, WateringStrategy
 from .wiki import WikipediaProvider, WikipediaService
@@ -39,12 +42,15 @@ __all__ = [
     "ITokenProvider",
     "ImageDownloaderProtocol",
     "ImageProcessorProtocol",
+    "ImageUrlValidatorProtocol",
     "ImageValidatorProtocol",
     "JWTTokenProvider",
     "PillowImageProcessor",
     "PillowImageValidator",
     "PlantService",
+    "SsrfSafeImageUrlValidator",
     "TropicalStrategy",
+    "UnsafeImageUrlError",
     "WateringStrategy",
     "WikipediaProvider",
     "WikipediaService",

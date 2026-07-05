@@ -1,4 +1,19 @@
-from pydantic import BaseModel, Field
+from urllib.parse import urlsplit
+
+from pydantic import BaseModel, Field, field_validator
+
+
+def _validate_preferred_image_url(value: str | None) -> str | None:
+    if value is None:
+        return value
+    if value.startswith("/"):
+        return value
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(
+            "preferred_image_url must be an absolute http(s) URL or a local path starting with '/'"
+        )
+    return value
 
 
 class WikipediaSearch(BaseModel):
@@ -42,6 +57,10 @@ class WikipediaRequest(BaseModel):
         examples=["/images/monstera.jpg"],
     )
 
+    _validate_preferred_image_url = field_validator("preferred_image_url")(
+        _validate_preferred_image_url
+    )
+
 
 class PlantNameRequest(BaseModel):
     plant_name: str = Field(
@@ -54,4 +73,8 @@ class PlantNameRequest(BaseModel):
         default=None,
         description="Previously stored local image URL to keep on the created plant and skip Wikimedia image lookup.",
         examples=["/images/fikus.jpg"],
+    )
+
+    _validate_preferred_image_url = field_validator("preferred_image_url")(
+        _validate_preferred_image_url
     )
