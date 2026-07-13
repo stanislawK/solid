@@ -48,16 +48,4 @@ spec:
             port:
               number: 80
   {{- end }}
-  {{- if .Values.ingress.glitchtip.enabled }}
-  - host: {{ .Values.ingress.glitchtip.host | quote }}
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: glitchtip-solid-web
-            port:
-              number: 80
-  {{- end }}
 {{- end }}

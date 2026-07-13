@@ -80,15 +80,6 @@ kubectl -n "$KUBE_NAMESPACE" create secret generic backend-auth \
   --dry-run=client \
   -o yaml | kubectl apply -f -
 
-if [[ -n "${GLITCHTIP_DSN:-}" ]]; then
-  kubectl -n "$KUBE_NAMESPACE" create secret generic glitchtip-secret \
-    --from-literal=GLITCHTIP_DSN="$GLITCHTIP_DSN" \
-    --dry-run=client \
-    -o yaml | kubectl apply -f -
-else
-  echo "GLITCHTIP_DSN not set; skipping glitchtip-secret creation."
-fi
-
 grafana_cloud_args=()
 [[ -n "${GRAFANA_CLOUD_LOGS_URL:-}" ]] && grafana_cloud_args+=(--from-literal=GRAFANA_CLOUD_LOGS_URL="$GRAFANA_CLOUD_LOGS_URL")
 [[ -n "${GRAFANA_CLOUD_LOGS_USER:-}" ]] && grafana_cloud_args+=(--from-literal=GRAFANA_CLOUD_LOGS_USER="$GRAFANA_CLOUD_LOGS_USER")
