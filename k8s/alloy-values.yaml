@@ -2,6 +2,18 @@ controller:
   type: daemonset
 
 alloy:
+  # OTLP receiver ports so the app can export traces straight to Alloy
+  # (replaces the standalone OTel Collector relay).
+  extraPorts:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+
   configMap:
     create: true
     content: |
@@ -41,5 +53,32 @@ alloy:
       loki.write "default" {
         endpoint {
           url = "http://loki.default.svc.cluster.local:3100/loki/api/v1/push"
+        }
+      }
+
+      otelcol.receiver.otlp "default" {
+        grpc {
+          endpoint = "0.0.0.0:4317"
+        }
+        http {
+          endpoint = "0.0.0.0:4318"
+        }
+        output {
+          traces = [otelcol.processor.batch.default.input]
+        }
+      }
+
+      otelcol.processor.batch "default" {
+        output {
+          traces = [otelcol.exporter.otlp.default.input]
+        }
+      }
+
+      otelcol.exporter.otlp "default" {
+        client {
+          endpoint = "tempo.default.svc.cluster.local:4317"
+          tls {
+            insecure = true
+          }
         }
       }
