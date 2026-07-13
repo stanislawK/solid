@@ -102,10 +102,6 @@ ingress:
     enabled: false
     secretName: ""
     certResolver: ""
-  # Optional Grafana routing (local convenience); disabled by default.
-  monitoring:
-    enabled: false
-    host: monitoring.local
 
 resources: {}
   # limits:

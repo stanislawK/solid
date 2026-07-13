@@ -52,8 +52,6 @@ ingress:
     enabled: true
     secretName: ""
     certResolver: letsencrypt
-  monitoring:
-    enabled: false
 
 resources:
   requests:

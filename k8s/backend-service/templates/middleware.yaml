@@ -1,3 +1,4 @@
+{{- if .Values.ingress.enabled }}
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
@@ -23,3 +24,4 @@ spec:
     customResponseHeaders:
       Cross-Origin-Opener-Policy: same-origin
       Cross-Origin-Resource-Policy: same-origin
+{{- end }}

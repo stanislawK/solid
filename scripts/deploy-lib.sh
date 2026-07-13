@@ -206,7 +206,7 @@ deploy_alloy_release() {
     --create-namespace \
     --wait \
     --timeout "$HELM_TIMEOUT" \
-    -f "$REPO_ROOT/k8s/alloy-values-production.yaml"
+    -f "$REPO_ROOT/k8s/alloy/values-production.yaml"
 }
 
 deploy_backend_release() {
