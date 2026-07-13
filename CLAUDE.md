@@ -21,14 +21,19 @@ pnpm build    # production build
 pnpm lint     # lint
 ```
 
-### Kubernetes (local kind cluster)
+### Kubernetes (unified deploy vocabulary — ENV=local kind, ENV=prod k3s VPS)
 ```bash
-make redeploy-backend        # docker build + kind load + rollout restart
-make redeploy-frontend       # docker build + kind load + rollout restart
-make reapply-backend         # helm upgrade without rebuild
-make expose-backend          # kubectl port-forward → http://localhost:8080
-make start-pods / stop-pods  # scale all workloads up/down
+make deploy TARGET=backend ENV=local    # build+load image then helm upgrade
+make deploy TARGET=frontend ENV=local   # (TARGET=backend|frontend|all)
+make reapply TARGET=backend ENV=local   # helm upgrade only, no image build
+make deploy TARGET=backend ENV=prod DRY_RUN=1   # preview helm changes (--dry-run=client)
+make bootstrap-secrets ENV=prod         # create/update prod secrets from SECRETS_ENV_FILE
+make deploy-postgres ENV=prod           # deploy/upgrade prod PostgreSQL (only on DB changes)
+make expose-backend                     # kubectl port-forward → http://localhost:8080
+make start-pods / stop-pods             # scale all workloads up/down (local)
 ```
+Deploy logic lives in `scripts/deploy.sh` + `scripts/deploy-lib.sh`. App deploys
+no longer touch Postgres — use `make deploy-postgres` for that.
 
 ## Architecture
 

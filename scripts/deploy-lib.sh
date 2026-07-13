@@ -5,15 +5,30 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd -- "$SCRIPT_DIR/.." && pwd)
 
+# Deployment environment: "prod" (k3s VPS) or "local" (kind cluster).
+: "${DEPLOY_ENV:=prod}"
+
 : "${KUBE_NAMESPACE:=default}"
+: "${KIND_CLUSTER:=solid-cluster}"
 : "${BACKEND_RELEASE:=backend}"
 : "${FRONTEND_RELEASE:=frontend}"
 : "${POSTGRES_RELEASE:=backend-postgresql}"
 : "${BACKEND_DEPLOYMENT_NAME:=${BACKEND_RELEASE}-backend-service}"
 : "${FRONTEND_DEPLOYMENT_NAME:=frontend-deployment}"
 : "${POSTGRES_STATEFULSET_NAME:=backend-postgresql}"
-: "${BACKEND_VALUES_FILE:=$REPO_ROOT/k8s/backend-service/values-production.yaml}"
-: "${FRONTEND_VALUES_FILE:=$REPO_ROOT/k8s/frontend-service/values-production.yaml}"
+
+# Config source per environment. Local uses the chart defaults; prod layers the
+# production values file (real app.* values are still injected via env below).
+if [[ "$DEPLOY_ENV" == "local" ]]; then
+  : "${BACKEND_VALUES_FILE:=$REPO_ROOT/k8s/backend-service/values.yaml}"
+  : "${FRONTEND_VALUES_FILE:=$REPO_ROOT/k8s/frontend-service/values.yaml}"
+  : "${BUILD_PLATFORM:=}"
+else
+  : "${BACKEND_VALUES_FILE:=$REPO_ROOT/k8s/backend-service/values-production.yaml}"
+  : "${FRONTEND_VALUES_FILE:=$REPO_ROOT/k8s/frontend-service/values-production.yaml}"
+  : "${BUILD_PLATFORM:=linux/arm64}"
+fi
+
 : "${POSTGRES_VALUES_FILE:=$REPO_ROOT/k8s/postgresql/values-production.yaml}"
 : "${BACKEND_IMAGE_REPOSITORY:=solid-backend}"
 : "${FRONTEND_IMAGE_REPOSITORY:=solid-frontend}"
@@ -25,12 +40,15 @@ REPO_ROOT=$(cd -- "$SCRIPT_DIR/.." && pwd)
 : "${POSTGRES_DATABASE:=solid}"
 : "${POSTGRES_SERVICE_NAME:=$POSTGRES_FULLNAME_OVERRIDE}"
 : "${POSTGRES_SERVICE_PORT:=5432}"
+# Both environments tag images with the short git SHA (unique + rollback-able).
 : "${IMAGE_TAG:=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || date +%Y%m%d%H%M%S)}"
 : "${HELM_TIMEOUT:=5m}"
 : "${ROLLOUT_TIMEOUT:=180s}"
 : "${K3S_BIN:=k3s}"
 : "${K3S_SUDO:=sudo}"
 : "${APP_ENV_FILE:=$REPO_ROOT/solid-prod.env}"
+# Set to "--dry-run=client" (via DRY_RUN=1 in the entrypoint) to preview helm changes.
+: "${HELM_UPGRADE_EXTRA:=}"
 
 load_env_file_if_present() {
   local file_path=$1
@@ -43,7 +61,10 @@ load_env_file_if_present() {
   fi
 }
 
-load_env_file_if_present "$APP_ENV_FILE"
+# Real prod app.* config lives in solid-prod.env; never load it for local.
+if [[ "$DEPLOY_ENV" == "prod" ]]; then
+  load_env_file_if_present "$APP_ENV_FILE"
+fi
 
 require_cmd() {
   local cmd
@@ -101,12 +122,51 @@ ensure_backend_bootstrap_secrets() {
   ensure_secret_key_exists backend-auth SESSION_SECRET_KEY
 }
 
+# Pre-flight liveness check: app deploys no longer (re)deploy Postgres, so make
+# sure the database is already present before rolling out the backend.
+check_postgres_available() {
+  if ! kubectl -n "$KUBE_NAMESPACE" get statefulset "$POSTGRES_STATEFULSET_NAME" >/dev/null 2>&1; then
+    echo "PostgreSQL statefulset '$POSTGRES_STATEFULSET_NAME' not found in namespace $KUBE_NAMESPACE." >&2
+    echo "Deploy the database first:  make deploy-postgres ENV=prod" >&2
+    exit 1
+  fi
+}
+
+helm_upgrade() {
+  # shellcheck disable=SC2086
+  helm upgrade "$@" ${HELM_UPGRADE_EXTRA:-}
+}
+
 build_backend_image() {
-  docker build --platform linux/arm64 -t "${BACKEND_IMAGE_REPOSITORY}:${IMAGE_TAG}" "$REPO_ROOT"
+  local platform_args=()
+  [[ -n "${BUILD_PLATFORM:-}" ]] && platform_args=(--platform "$BUILD_PLATFORM")
+  docker build "${platform_args[@]}" -t "${BACKEND_IMAGE_REPOSITORY}:${IMAGE_TAG}" "$REPO_ROOT"
 }
 
 build_frontend_image() {
-  docker build --platform linux/arm64 -t "${FRONTEND_IMAGE_REPOSITORY}:${IMAGE_TAG}" "$REPO_ROOT/frontend"
+  local platform_args=()
+  [[ -n "${BUILD_PLATFORM:-}" ]] && platform_args=(--platform "$BUILD_PLATFORM")
+  docker build "${platform_args[@]}" -t "${FRONTEND_IMAGE_REPOSITORY}:${IMAGE_TAG}" "$REPO_ROOT/frontend"
+}
+
+import_image_into_k3s() {
+  local image_ref=$1
+  local tar_path
+
+  tar_path=$(mktemp "${TMPDIR:-/tmp}/$(basename "$image_ref" | tr '/:' '__').XXXXXX.tar")
+  docker save -o "$tar_path" "$image_ref"
+  "$K3S_SUDO" "$K3S_BIN" ctr images import "$tar_path"
+  rm -f "$tar_path"
+}
+
+# Load a locally-built image into the target cluster's runtime.
+load_image() {
+  local image_ref=$1
+  if [[ "$DEPLOY_ENV" == "local" ]]; then
+    kind load docker-image "$image_ref" --name "$KIND_CLUSTER"
+  else
+    import_image_into_k3s "$image_ref"
+  fi
 }
 
 ensure_bitnami_repo() {
@@ -126,7 +186,7 @@ ensure_grafana_repo() {
 deploy_postgres_release() {
   ensure_file "$POSTGRES_VALUES_FILE"
   ensure_bitnami_repo
-  helm upgrade --install "$POSTGRES_RELEASE" "$POSTGRES_CHART" \
+  helm_upgrade --install "$POSTGRES_RELEASE" "$POSTGRES_CHART" \
     --version "$POSTGRES_CHART_VERSION" \
     --namespace "$KUBE_NAMESPACE" \
     --create-namespace \
@@ -139,19 +199,9 @@ deploy_postgres_release() {
     --set-string auth.database="$POSTGRES_DATABASE"
 }
 
-import_image_into_k3s() {
-  local image_ref=$1
-  local tar_path
-
-  tar_path=$(mktemp "${TMPDIR:-/tmp}/$(basename "$image_ref" | tr '/:' '__').XXXXXX.tar")
-  docker save -o "$tar_path" "$image_ref"
-  "$K3S_SUDO" "$K3S_BIN" ctr images import "$tar_path"
-  rm -f "$tar_path"
-}
-
 deploy_alloy_release() {
   ensure_grafana_repo
-  helm upgrade --install alloy grafana/alloy \
+  helm_upgrade --install alloy grafana/alloy \
     --namespace "$KUBE_NAMESPACE" \
     --create-namespace \
     --wait \
@@ -162,7 +212,7 @@ deploy_alloy_release() {
 deploy_backend_release() {
   ensure_file "$BACKEND_VALUES_FILE"
   local helm_args=(
-    upgrade --install "$BACKEND_RELEASE" "$REPO_ROOT/k8s/backend-service"
+    --install "$BACKEND_RELEASE" "$REPO_ROOT/k8s/backend-service"
     --namespace "$KUBE_NAMESPACE"
     --create-namespace
     --wait
@@ -172,6 +222,7 @@ deploy_backend_release() {
     --set-string image.tag="$IMAGE_TAG"
   )
 
+  # Prod app.* config injected from solid-prod.env (unset -> chart defaults locally).
   [[ -n "${ENVIRONMENT:-}" ]] && helm_args+=(--set-string app.environment="$ENVIRONMENT")
   [[ -n "${FRONTEND_URL:-}" ]] && helm_args+=(--set-string app.frontendUrl="$FRONTEND_URL")
   [[ -n "${GCP_REDIRECT_URI:-}" ]] && helm_args+=(--set-string app.gcpRedirectUri="$GCP_REDIRECT_URI")
@@ -184,12 +235,12 @@ deploy_backend_release() {
   [[ -n "${SESSION_HTTPS_ONLY:-}" ]] && helm_args+=(--set-string app.session.httpsOnly="$SESSION_HTTPS_ONLY")
   [[ -n "${SESSION_SAME_SITE:-}" ]] && helm_args+=(--set-string app.session.sameSite="$SESSION_SAME_SITE")
 
-  helm "${helm_args[@]}"
+  helm_upgrade "${helm_args[@]}"
 }
 
 deploy_frontend_release() {
   ensure_file "$FRONTEND_VALUES_FILE"
-  helm upgrade --install "$FRONTEND_RELEASE" "$REPO_ROOT/k8s/frontend-service" \
+  helm_upgrade --install "$FRONTEND_RELEASE" "$REPO_ROOT/k8s/frontend-service" \
     --namespace "$KUBE_NAMESPACE" \
     --create-namespace \
     --wait \
@@ -213,10 +264,9 @@ wait_for_frontend_rollout() {
 
 print_deploy_summary() {
   cat <<EOF
+Environment: $DEPLOY_ENV
 Namespace: $KUBE_NAMESPACE
 Image tag: $IMAGE_TAG
-PostgreSQL release: $POSTGRES_RELEASE
-PostgreSQL service: ${POSTGRES_SERVICE_NAME}:${POSTGRES_SERVICE_PORT}
 Backend image: ${BACKEND_IMAGE_REPOSITORY}:${IMAGE_TAG}
 Frontend image: ${FRONTEND_IMAGE_REPOSITORY}:${IMAGE_TAG}
 EOF

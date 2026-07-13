@@ -1,23 +1,25 @@
 PYTHON := uv run
 ALEMBIC := $(PYTHON) alembic
-IMAGE_NAME := solid-backend
-IMAGE_TAG := latest
-KIND_CLUSTER := solid-cluster
 KUBE_NAMESPACE := default
-HELM_RELEASE := backend
-HELM_CHART := ./k8s/backend-service
-BACKEND_DEPLOYMENT := $(HELM_RELEASE)-backend-service
-FRONTEND_IMAGE_NAME := solid-frontend
+BACKEND_DEPLOYMENT := backend-backend-service
 FRONTEND_DEPLOYMENT := frontend-deployment
 DAEMONSET_PAUSE_KEY := solid-paused
 
+# Deploy vocabulary (see scripts/deploy.sh): make deploy TARGET=backend ENV=prod
+ENV ?= local
+TARGET ?= backend
+
 .PHONY: help
 help:
-	@echo "make migration MSG='init'  - create a new migration"
-	@echo "make upgrade                - apply migrations"
-	@echo "make downgrade REV=-1       - rollback migrations"
-	@echo "make start-pods             - scale backend/observability/infra workloads up"
-	@echo "make stop-pods              - scale backend/observability/infra workloads down"
+	@echo "make migration MSG='init'          - create a new migration"
+	@echo "make upgrade                        - apply migrations"
+	@echo "make downgrade REV=-1               - rollback migrations"
+	@echo "make deploy TARGET=backend ENV=prod - build+load image then helm upgrade"
+	@echo "make reapply TARGET=backend ENV=prod- helm upgrade only (no image build)"
+	@echo "make bootstrap-secrets ENV=prod     - create/update prod secrets"
+	@echo "make deploy-postgres ENV=prod       - deploy/upgrade prod PostgreSQL"
+	@echo "  (append DRY_RUN=1 to deploy/reapply/deploy-postgres to preview helm changes)"
+	@echo "make start-pods / stop-pods         - scale all workloads up/down (local)"
 
 .PHONY: migration
 migration:
@@ -39,9 +41,21 @@ format:
 openapi:
 	$(PYTHON) python -c "import json; from main import app; open('openapi.json', 'w').write(json.dumps(app.openapi(), indent=2))"
 
-.PHONY: reapply-backend
-reapply-backend:
-	helm upgrade --install $(HELM_RELEASE) $(HELM_CHART)
+.PHONY: deploy
+deploy:                # build+load image then helm upgrade. e.g. make deploy TARGET=backend ENV=prod
+	ACTION=deploy TARGET=$(TARGET) DEPLOY_ENV=$(ENV) DRY_RUN=$(DRY_RUN) ./scripts/deploy.sh
+
+.PHONY: reapply
+reapply:               # helm upgrade only, no image build. e.g. make reapply TARGET=backend ENV=prod
+	ACTION=reapply TARGET=$(TARGET) DEPLOY_ENV=$(ENV) DRY_RUN=$(DRY_RUN) ./scripts/deploy.sh
+
+.PHONY: bootstrap-secrets
+bootstrap-secrets:     # create/update prod secrets from SECRETS_ENV_FILE
+	DEPLOY_ENV=$(ENV) ./scripts/prod-bootstrap-secrets.sh
+
+.PHONY: deploy-postgres
+deploy-postgres:       # deploy/upgrade prod PostgreSQL (run only on intentional DB changes)
+	DRY_RUN=$(DRY_RUN) ./scripts/prod-deploy-postgres.sh
 
 .PHONY: start-pods
 start-pods:
@@ -65,20 +79,10 @@ stop-pods:
 expose-backend:
 	kubectl port-forward svc/traefik-solid 8080:80
 
-.PHONY: redeploy-backend
-redeploy-backend:
-	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) .
-	kind load docker-image $(IMAGE_NAME):$(IMAGE_TAG) --name $(KIND_CLUSTER)
-	kubectl -n $(KUBE_NAMESPACE) rollout restart deploy/$(BACKEND_DEPLOYMENT)
-
-.PHONY: redeploy-frontend
-redeploy-frontend:
-	docker build -t $(FRONTEND_IMAGE_NAME):$(IMAGE_TAG) frontend/
-	kind load docker-image $(FRONTEND_IMAGE_NAME):$(IMAGE_TAG) --name $(KIND_CLUSTER)
-	kubectl -n $(KUBE_NAMESPACE) rollout restart deploy/$(FRONTEND_DEPLOYMENT)
-
+.PHONY: backend-rollout
 backend-rollout:
 	kubectl -n $(KUBE_NAMESPACE) rollout restart deploy/$(BACKEND_DEPLOYMENT)
 
+.PHONY: frontend-rollout
 frontend-rollout:
 	kubectl -n $(KUBE_NAMESPACE) rollout restart deploy/$(FRONTEND_DEPLOYMENT)

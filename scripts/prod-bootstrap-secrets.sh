@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-source "$SCRIPT_DIR/prod-common.sh"
+source "$SCRIPT_DIR/deploy-lib.sh"
 
 : "${SECRETS_ENV_FILE:=}"
 
