@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-source "$SCRIPT_DIR/prod-common.sh"
+source "$SCRIPT_DIR/deploy-lib.sh"
 
 : "${SECRETS_ENV_FILE:=}"
 
@@ -79,15 +79,6 @@ kubectl -n "$KUBE_NAMESPACE" create secret generic backend-auth \
   "${auth_secret_args[@]}" \
   --dry-run=client \
   -o yaml | kubectl apply -f -
-
-if [[ -n "${GLITCHTIP_DSN:-}" ]]; then
-  kubectl -n "$KUBE_NAMESPACE" create secret generic glitchtip-secret \
-    --from-literal=GLITCHTIP_DSN="$GLITCHTIP_DSN" \
-    --dry-run=client \
-    -o yaml | kubectl apply -f -
-else
-  echo "GLITCHTIP_DSN not set; skipping glitchtip-secret creation."
-fi
 
 grafana_cloud_args=()
 [[ -n "${GRAFANA_CLOUD_LOGS_URL:-}" ]] && grafana_cloud_args+=(--from-literal=GRAFANA_CLOUD_LOGS_URL="$GRAFANA_CLOUD_LOGS_URL")

@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     session_same_site: Literal["lax", "strict", "none"] = "lax"
     session_max_age_seconds: int = 3600
     storage_dir: str = "data/images"
+    image_fetch_timeout_seconds: float = 10.0
+    image_fetch_max_bytes: int = 10 * 1024 * 1024  # 10 MB
 
     @staticmethod
     def _split_csv(raw_value: str) -> list[str]:

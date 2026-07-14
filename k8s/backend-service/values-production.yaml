@@ -42,10 +42,6 @@ observability:
     podAnnotations:
       loki.grafana.com/scrape: "true"
       loki.grafana.com/job: "solid-backend"
-  glitchtip:
-    enabled: false
-    existingSecret: glitchtip-secret
-    existingSecretKey: GLITCHTIP_DSN
 
 ingress:
   enabled: true
@@ -56,10 +52,6 @@ ingress:
     enabled: true
     secretName: ""
     certResolver: letsencrypt
-  monitoring:
-    enabled: false
-  glitchtip:
-    enabled: false
 
 resources:
   requests:
@@ -68,6 +60,3 @@ resources:
   limits:
     cpu: 500m
     memory: 512Mi
-
-autoscaling:
-  enabled: false

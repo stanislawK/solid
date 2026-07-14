@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
 
 """
@@ -35,7 +35,7 @@ class PlantUpdate(BaseModel):
 
 
 class PlantImageUrlUpdate(BaseModel):
-    image_url: str = Field(min_length=1)
+    image_url: AnyHttpUrl
 
 
 class PlantRead(PlantBase):

@@ -5,9 +5,7 @@ metadata:
   labels:
     {{- include "backend-service.labels" . | nindent 4 }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
-  {{- end }}
   selector:
     matchLabels:
       {{- include "backend-service.selectorLabels" . | nindent 6 }}
@@ -30,14 +28,7 @@ spec:
       labels:
         app: solid-backend
         {{- include "backend-service.labels" . | nindent 8 }}
-        {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
     spec:
-      {{- with .Values.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       serviceAccountName: {{ include "backend-service.serviceAccountName" . }}
       {{- with .Values.podSecurityContext }}
       securityContext:
@@ -52,13 +43,6 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
-            {{- if .Values.observability.glitchtip.enabled }}
-            - name: GLITCHTIP_DSN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.observability.glitchtip.existingSecret }}
-                  key: {{ .Values.observability.glitchtip.existingSecretKey }}
-            {{- end }}
             - name: ENVIRONMENT
               value: {{ .Values.app.environment | quote }}
             - name: DATABASE_URL
@@ -163,25 +147,7 @@ spec:
           volumeMounts:
             - name: data-volume
               mountPath: /app/data
-          {{- with .Values.volumeMounts }}
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
       volumes:
         - name: data-volume
           persistentVolumeClaim:
             claimName: {{ include "backend-service.fullname" . }}-data
-      {{- with .Values.volumes }}
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.nodeSelector }}
-      nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}

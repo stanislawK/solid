@@ -13,6 +13,7 @@ from .ai import IPlantIdentifier, IPlantSummarizer
 from .image import (
     ImageDownloaderProtocol,
     ImageProcessorProtocol,
+    ImageUrlValidatorProtocol,
     ImageValidatorProtocol,
 )
 from .wiki import WikipediaProvider
@@ -49,6 +50,7 @@ class PlantService:
         image_downloader: ImageDownloaderProtocol,
         storage_repo: ImageStorageProtocol,
         image_validator: ImageValidatorProtocol,
+        image_url_validator: ImageUrlValidatorProtocol,
         identifier: IPlantIdentifier | None = None,
         image_processor: ImageProcessorProtocol | None = None,
     ):
@@ -58,6 +60,7 @@ class PlantService:
         self.image_downloader = image_downloader
         self.storage_repo = storage_repo
         self.image_validator = image_validator
+        self.image_url_validator = image_url_validator
         self.identifier = identifier
         self.image_processor = image_processor
 
@@ -80,7 +83,14 @@ class PlantService:
         )
 
     async def _download_and_store_image(self, image_url: str) -> str:
-        image_bytes = await self.image_downloader.download_image(image_url)
+        (
+            validated_url,
+            hostname,
+            resolved_ip,
+        ) = await self.image_url_validator.validate_url(image_url)
+        image_bytes = await self.image_downloader.download_image(
+            validated_url, hostname, resolved_ip
+        )
         return await self._store_image_bytes(image_url, image_bytes)
 
     async def _replace_plant_image(self, plant: Plant, local_image_url: str) -> Plant:

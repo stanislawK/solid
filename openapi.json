@@ -221,6 +221,11 @@
         ],
         "summary": "List Plants",
         "operationId": "list_plants_plants_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "q",
@@ -245,21 +250,26 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/PlantRead"
                   },
-                  "type": "array",
                   "title": "Response List Plants Plants Get"
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       }
     },
     "/plants/{plant_id}": {
@@ -672,6 +682,44 @@
         ]
       }
     },
+    "/auth/refresh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Refresh Auth Session",
+        "operationId": "refresh_auth_session_auth_refresh_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Logout",
+        "operationId": "logout_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/activate": {
       "post": {
         "tags": [
@@ -968,6 +1016,21 @@
         ],
         "title": "PlantCreate"
       },
+      "PlantImageUrlUpdate": {
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "minLength": 1,
+            "format": "uri",
+            "title": "Image Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "image_url"
+        ],
+        "title": "PlantImageUrlUpdate"
+      },
       "PlantNameRequest": {
         "properties": {
           "plant_name": {
@@ -1087,20 +1150,6 @@
           "user_id"
         ],
         "title": "PlantRead"
-      },
-      "PlantImageUrlUpdate": {
-        "properties": {
-          "image_url": {
-            "type": "string",
-            "minLength": 1,
-            "title": "Image Url"
-          }
-        },
-        "type": "object",
-        "required": [
-          "image_url"
-        ],
-        "title": "PlantImageUrlUpdate"
       },
       "PlantUpdate": {
         "properties": {

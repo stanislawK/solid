@@ -33,31 +33,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: backend-backend-service
+            name: {{ include "backend-service.fullname" . }}
             port:
               number: {{ .Values.service.port }}
-  {{- if .Values.ingress.monitoring.enabled }}
-  - host: {{ .Values.ingress.monitoring.host | quote }}
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: monitoring-grafana
-            port:
-              number: 80
-  {{- end }}
-  {{- if .Values.ingress.glitchtip.enabled }}
-  - host: {{ .Values.ingress.glitchtip.host | quote }}
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: glitchtip-solid-web
-            port:
-              number: 80
-  {{- end }}
 {{- end }}

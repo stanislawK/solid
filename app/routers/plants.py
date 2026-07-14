@@ -21,6 +21,8 @@ from app.services import (
     PillowImageValidator,
     PillowImageProcessor,
     GeminiPlantIdentifier,
+    SsrfSafeImageUrlValidator,
+    UnsafeImageUrlError,
 )
 from app.config import settings
 from app.routers.auth import get_current_user, require_csrf_for_cookie_auth
@@ -48,8 +50,13 @@ def get_plant_service(db: AsyncSession = Depends(get_db)) -> PlantService:
     # 2. External Providers (Infrastructure)
     wiki = WikipediaService(browser=settings.browser)
     summarizer = GeminiPlantSummarizer(api_key=settings.gem_api_key)
-    downloader = CurlImageDownloader(browser=settings.browser)
+    downloader = CurlImageDownloader(
+        browser=settings.browser,
+        timeout=settings.image_fetch_timeout_seconds,
+        max_bytes=settings.image_fetch_max_bytes,
+    )
     validator = PillowImageValidator()
+    url_validator = SsrfSafeImageUrlValidator()
 
     processor = PillowImageProcessor()
     identifier = GeminiPlantIdentifier(api_key=settings.gem_api_key)
@@ -62,6 +69,7 @@ def get_plant_service(db: AsyncSession = Depends(get_db)) -> PlantService:
         image_downloader=downloader,
         storage_repo=storage,
         image_validator=validator,
+        image_url_validator=url_validator,
         identifier=identifier,
         image_processor=processor,
     )
@@ -249,9 +257,11 @@ async def update_plant_image_from_url(
 ) -> PlantRead:
     try:
         plant = await service.update_plant_image_from_url(
-            plant_id, current_user.id, payload.image_url
+            plant_id, current_user.id, str(payload.image_url)
         )
         return PlantRead.model_validate(plant)
+    except UnsafeImageUrlError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except ValueError as e:
         if "format" in str(e).lower():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
